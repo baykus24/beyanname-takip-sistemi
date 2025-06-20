@@ -6,7 +6,24 @@ const path = require('path');
 
 // Firebase Admin SDK'yı başlat
 // Hizmet hesabı anahtar dosyanızın doğru yolda olduğundan emin olun
-const serviceAccount = require('./firebase-service-account-key.json'); // BU YOLU KONTROL EDİN!
+let serviceAccount;
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  // Render'da (canlıda) ortam değişkeninden al
+  try {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+  } catch (e) {
+    console.error('Firebase service account parsing error:', e);
+    process.exit(1);
+  }
+} else {
+  // Yerelde dosyadan oku
+  try {
+    serviceAccount = require('./firebase-service-account-key.json');
+  } catch (e) {
+    console.error('Could not find or read firebase-service-account-key.json. Make sure the file exists in the /server directory for local development.');
+    process.exit(1);
+  }
+} // BU YOLU KONTROL EDİN!
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount)
