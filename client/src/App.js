@@ -64,7 +64,7 @@ function App() {
     if (!loadMore) setIsLoading(true);
 
     try {
-      let url = 'http://localhost:5000/api/customers';
+      let url = 'https://beyanname-takip-sistemi.onrender.com/api/customers';
       if (loadMore && lastVisible) {
         url += `?lastVisible=${lastVisible}`;
       }
@@ -137,14 +137,14 @@ function App() {
     }
     setIsLoading(true);
     try {
-      const res = await axios.post('http://localhost:5000/api/customers', {
+      const res = await axios.post('https://beyanname-takip-sistemi.onrender.com/api/customers', {
         name, tax_no: taxNo, ledger_type: ledgerType
       });
       const customerId = res.data.id;
       for (const type of selectedDeclarations) {
         const months = declarationMonths[type] || [];
         for (const month of months) {
-          await axios.post('http://localhost:5000/api/declarations', {
+          await axios.post('https://beyanname-takip-sistemi.onrender.com/api/declarations', {
             customer_id: customerId,
             type,
             month: MONTHS.indexOf(month) + 1,
@@ -177,7 +177,7 @@ function App() {
 
     setIsLoading(true);
     try {
-      await axios.delete(`http://localhost:5000/api/customers/${customerToDelete}`);
+      await axios.delete(`https://beyanname-takip-sistemi.onrender.com/api/customers/${customerToDelete}`);
       toast.success('Müşteri başarıyla silindi!');
       fetchCustomers(); // Listeyi yenile
     } catch (error) {
@@ -342,12 +342,12 @@ function App() {
             if (!editCustomer) return;
             const customerDecls = allDeclarations.filter(d => d.customer_id === editCustomer.id);
             for (const decl of customerDecls) {
-              await axios.delete(`http://localhost:5000/api/declarations/${decl.id}`);
+              await axios.delete(`https://beyanname-takip-sistemi.onrender.com/api/declarations/${decl.id}`);
             }
             const year = new Date().getFullYear();
             for (const type of selected) {
               for (const month of (months[type] || [])) {
-                await axios.post('http://localhost:5000/api/declarations', {
+                await axios.post('https://beyanname-takip-sistemi.onrender.com/api/declarations', {
                   customer_id: editCustomer.id,
                   type,
                   month: MONTHS.indexOf(month) + 1,

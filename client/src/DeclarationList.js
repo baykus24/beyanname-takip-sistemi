@@ -61,7 +61,7 @@ function DeclarationList({ onDeclarationsUpdate }) {
     setLoading(true);
     setError('');
     try {
-      const res = await axios.get('http://localhost:5000/api/declarations');
+      const res = await axios.get('https://beyanname-takip-sistemi.onrender.com/api/declarations');
       setDeclarations(res.data);
     if (onDeclarationsUpdate) onDeclarationsUpdate(res.data);
     } catch (err) {
@@ -85,7 +85,7 @@ function DeclarationList({ onDeclarationsUpdate }) {
 
   const handleStatusChange = async (id, newStatus) => {
     const completedAt = newStatus === 'Tamamlandı' ? new Date().toISOString().slice(0, 10) : null;
-    await axios.put(`http://localhost:5000/api/declarations/${id}`, {
+    await axios.put(`https://beyanname-takip-sistemi.onrender.com/api/declarations/${id}`, {
       status: newStatus,
       completed_at: completedAt,
       note: declarations.find(d => d.id === id)?.note || ''
@@ -99,7 +99,7 @@ function DeclarationList({ onDeclarationsUpdate }) {
 
   const handleNoteSave = async (id) => {
     const note = noteEdit[id] || '';
-    await axios.put(`http://localhost:5000/api/declarations/${id}`, {
+    await axios.put(`https://beyanname-takip-sistemi.onrender.com/api/declarations/${id}`, {
       status: declarations.find(d => d.id === id)?.status,
       completed_at: declarations.find(d => d.id === id)?.completed_at,
       note,
@@ -116,7 +116,7 @@ function DeclarationList({ onDeclarationsUpdate }) {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await axios.delete(`http://localhost:5000/api/declarations/${deleteId}`);
+      await axios.delete(`https://beyanname-takip-sistemi.onrender.com/api/declarations/${deleteId}`);
       fetchDeclarations();
     } catch (err) {
       alert('Silme işlemi sırasında hata oluştu.');
