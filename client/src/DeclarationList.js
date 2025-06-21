@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState } from 'react';
 import axios from 'axios';
 import { exportToExcel, exportToPdf } from './exportUtils';
 import './DeclarationList.css';
@@ -50,8 +50,6 @@ function DeclarationList({ declarations, refetchDeclarations, declarationTypes =
     status: '',
   });
   const [noteEdit, setNoteEdit] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [deleteId, setDeleteId] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
@@ -61,22 +59,21 @@ function DeclarationList({ declarations, refetchDeclarations, declarationTypes =
     setFilters({ ...filters, [e.target.name]: e.target.value });
   };
 
-  const filteredDeclarations = useMemo(() => {
-    if (!declarations) return []; // Eğer beyanname verisi henüz gelmediyse boş dizi döndür
-    return declarations.filter(d => {
-    const m = filters.month ? d.month === parseInt(filters.month) : true;
-    const y = filters.year ? d.year === parseInt(filters.year) : true;
-    const t = filters.type ? d.type === filters.type : true;
-    const l = filters.ledger ? d.ledger_type === filters.ledger : true;
-    const s = filters.status ? d.status === filters.status : true;
+  const filteredDeclarations = (declarations || [])
+    .filter(d => {
+      const m = filters.month ? d.month === parseInt(filters.month) : true;
+      const y = filters.year ? d.year === parseInt(filters.year) : true;
+      const t = filters.type ? d.type === filters.type : true;
+      const l = filters.ledger ? d.ledger_type === filters.ledger : true;
+      const s = filters.status ? d.status === filters.status : true;
       return m && y && t && l && s;
-    }).sort((a, b) => {
+    })
+    .sort((a, b) => {
       if (a.customer_name && b.customer_name) {
         return a.customer_name.localeCompare(b.customer_name, 'tr');
       }
       return 0;
     });
-  }, [declarations, filters]);
 
   const handleStatusChange = async (id, newStatus) => {
     const completedAt = newStatus === 'Tamamlandı' ? new Date().toISOString().slice(0, 10) : null;
@@ -151,8 +148,6 @@ function DeclarationList({ declarations, refetchDeclarations, declarationTypes =
         onConfirm={handleDelete}
         onCancel={() => { setShowDeleteModal(false); setDeleteId(null); }}
       />
-      {loading && <div style={{color: '#007bff', textAlign: 'center'}}>Yükleniyor...</div>}
-      {error && <div style={{color: 'red', textAlign: 'center'}}>{error}</div>}
       <div className="export-buttons">
         <button onClick={handleExportExcel} className="export-btn excel">Excel'e Aktar</button>
         <button onClick={handleExportPdf} className="export-btn pdf">PDF'e Aktar</button>
