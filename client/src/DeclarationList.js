@@ -83,6 +83,12 @@ function DeclarationList({ onDeclarationsUpdate, declarationTypes = [], ledgerTy
     const l = filters.ledger ? d.ledger_type === filters.ledger : true;
     const s = filters.status ? d.status === filters.status : true;
     return m && y && t && l && s;
+  }).sort((a, b) => {
+    // Müşteri adına göre Türkçe karakterleri de dikkate alarak sırala
+    if (a.customer_name && b.customer_name) {
+      return a.customer_name.localeCompare(b.customer_name, 'tr');
+    }
+    return 0; // Eğer müşteri adı yoksa sıralamayı değiştirme
   });
 
   const handleStatusChange = async (id, newStatus) => {
