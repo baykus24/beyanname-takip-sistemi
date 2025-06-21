@@ -110,6 +110,14 @@ function App() {
     }));
   };
 
+  const handleSelectAllMonths = (type) => {
+    const allSelected = declarationMonths[type]?.length === MONTHS.length;
+    setDeclarationMonths(prev => ({
+      ...prev,
+      [type]: allSelected ? [] : MONTHS,
+    }));
+  };
+
   const handleCustomDeclAdd = () => {
     const val = customDeclInput.trim();
     if (val && !declarationTypes.includes(val)) {
@@ -292,7 +300,10 @@ function App() {
           {selectedDeclarations.map(type => (
             <div key={type} className="months-select">
               <label>{type} için Aylar:</label>
-              <div className="checkbox-group">
+              <button type="button" onClick={() => handleSelectAllMonths(type)} style={{ marginLeft: '10px', fontSize: '12px', padding: '2px 8px', cursor: 'pointer' }}>
+                {declarationMonths[type]?.length === MONTHS.length ? 'Tümünü Kaldır' : 'Tümünü Seç'}
+              </button>
+              <div className="checkbox-group" style={{ marginTop: '5px' }}>
                 {MONTHS.map(month => (
                   <label key={month}>
                     <input type="checkbox" checked={declarationMonths[type]?.includes(month) || false} onChange={() => handleMonthChange(type, month)} /> {month}
@@ -364,7 +375,7 @@ function App() {
       </div>
 
       {/* Render DeclarationList separately below the main container */}
-      <DeclarationList onDeclarationsUpdate={handleDeclarationsUpdate} />
+      <DeclarationList onDeclarationsUpdate={handleDeclarationsUpdate} declarationTypes={declarationTypes} ledgerTypes={LEDGER_TYPES} />
     </>
   );
 }

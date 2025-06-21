@@ -13,6 +13,10 @@ const STATUS_OPTIONS = [
   { value: 'Tamamlandı', label: 'Tamamlandı' },
 ];
 
+const YEARS = Array.from({ length: new Date().getFullYear() - 2019 }, (_, i) => new Date().getFullYear() - i);
+
+
+
 import ConfirmModal from './ConfirmModal';
 
 const formatFirestoreTimestamp = (timestamp) => {
@@ -38,7 +42,7 @@ const formatFirestoreTimestamp = (timestamp) => {
   return 'Geçersiz Tarih';
 };
 
-function DeclarationList({ onDeclarationsUpdate }) {
+function DeclarationList({ onDeclarationsUpdate, declarationTypes = [], ledgerTypes = [] }) {
   const [declarations, setDeclarations] = useState([]);
   const [filters, setFilters] = useState({
     month: '',
@@ -164,16 +168,31 @@ function DeclarationList({ onDeclarationsUpdate }) {
       </div>
       <div className="filters">
         <select name="month" value={filters.month} onChange={handleFilterChange}>
-          <option value="">Ay</option>
+          <option value="">Ay Seçin</option>
           {MONTHS.map((m, i) => (
             <option key={m} value={i + 1}>{m}</option>
           ))}
         </select>
-        <input name="year" value={filters.year} onChange={handleFilterChange} placeholder="Yıl" type="number" min="2020" max="2100" />
-        <input name="type" value={filters.type} onChange={handleFilterChange} placeholder="Beyanname Türü" />
-        <input name="ledger" value={filters.ledger} onChange={handleFilterChange} placeholder="Defter Türü" />
+        <select name="year" value={filters.year} onChange={handleFilterChange}>
+          <option value="">Yıl Seçin</option>
+          {YEARS.map(y => (
+            <option key={y} value={y}>{y}</option>
+          ))}
+        </select>
+        <select name="type" value={filters.type} onChange={handleFilterChange}>
+          <option value="">Beyanname Türü Seçin</option>
+          {declarationTypes.map(t => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+        <select name="ledger" value={filters.ledger} onChange={handleFilterChange}>
+          <option value="">Defter Türü Seçin</option>
+          {ledgerTypes.map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
         <select name="status" value={filters.status} onChange={handleFilterChange}>
-          <option value="">Durum</option>
+          <option value="">Durum Seçin</option>
           {STATUS_OPTIONS.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
