@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import axios from 'axios';
 import { exportToExcel, exportToPdf } from './exportUtils';
 import './DeclarationList.css';
-
+import ConfirmModal from './ConfirmModal';
 
 const MONTHS = [
   'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
@@ -16,8 +16,6 @@ const STATUS_OPTIONS = [
 const YEARS = Array.from({ length: new Date().getFullYear() - 2019 }, (_, i) => new Date().getFullYear() - i);
 
 
-
-import ConfirmModal from './ConfirmModal';
 
 const formatFirestoreTimestamp = (timestamp) => {
   if (!timestamp) {
