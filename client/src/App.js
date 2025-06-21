@@ -70,7 +70,13 @@ function App() {
         url += `?lastVisible=${lastVisible}`;
       }
 
-      const response = await axios.get(url);
+            const response = await axios.get(url, {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      });
       const { customers: newCustomers, lastVisible: newLastVisible } = response.data;
 
       if (loadMore) {
@@ -94,7 +100,13 @@ function App() {
     const fetchAllDeclarations = async () => {
     setIsDeclLoading(true);
     try {
-      const res = await axios.get('https://beyanname-takip-sistemi.onrender.com/api/declarations');
+            const res = await axios.get('https://beyanname-takip-sistemi.onrender.com/api/declarations', {
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        },
+      });
       setAllDeclarations(res.data);
     } catch (error) {
       console.error('Error fetching declarations:', error);
