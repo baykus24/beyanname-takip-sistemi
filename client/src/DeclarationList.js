@@ -40,7 +40,7 @@ const formatFirestoreTimestamp = (timestamp) => {
   return 'Geçersiz Tarih';
 };
 
-function DeclarationList({ declarations, refetchDeclarations, declarationTypes = [], ledgerTypes = [] }) {
+function DeclarationList({ declarations, isLoading, refetchDeclarations, declarationTypes = [], ledgerTypes = [] }) {
 
   const [filters, setFilters] = useState({
     month: '',
@@ -141,6 +141,7 @@ function DeclarationList({ declarations, refetchDeclarations, declarationTypes =
   return (
     <div className="decl-list-container">
       <h2>Beyanname Takip Listesi</h2>
+      {isLoading && <div style={{ textAlign: 'center', padding: '20px', color: '#007bff' }}>Yükleniyor...</div>}
       <ConfirmModal
         open={showDeleteModal}
         title="Beyanname Silme Onayı"
@@ -232,6 +233,11 @@ function DeclarationList({ declarations, refetchDeclarations, declarationTypes =
           ))}
         </tbody>
       </table>
+      {!isLoading && filteredDeclarations.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '20px', color: '#666' }}>
+          Gösterilecek beyanname bulunamadı.
+        </div>
+      )}
     </div>
   );
 }

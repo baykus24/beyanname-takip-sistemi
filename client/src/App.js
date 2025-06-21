@@ -40,6 +40,7 @@ function App() {
 
   // Declaration & Modal State
   const [allDeclarations, setAllDeclarations] = useState([]);
+  const [isDeclLoading, setIsDeclLoading] = useState(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editCustomer, setEditCustomer] = useState(null);
   
@@ -91,12 +92,15 @@ function App() {
   };
 
     const fetchAllDeclarations = async () => {
+    setIsDeclLoading(true);
     try {
       const res = await axios.get('https://beyanname-takip-sistemi.onrender.com/api/declarations');
       setAllDeclarations(res.data);
     } catch (error) {
       console.error('Error fetching declarations:', error);
       toast.error('Beyanname listesi yüklenirken bir hata oluştu.');
+    } finally {
+      setIsDeclLoading(false);
     }
   };
 
@@ -386,7 +390,7 @@ function App() {
       </div>
 
       {/* Render DeclarationList separately below the main container */}
-      <DeclarationList declarations={allDeclarations} refetchDeclarations={fetchAllDeclarations} declarationTypes={declarationTypes} ledgerTypes={LEDGER_TYPES} />
+      <DeclarationList declarations={allDeclarations} isLoading={isDeclLoading} refetchDeclarations={fetchAllDeclarations} declarationTypes={declarationTypes} ledgerTypes={LEDGER_TYPES} />
     </>
   );
 }
