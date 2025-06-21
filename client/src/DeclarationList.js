@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import axios from 'axios';
 import { exportToExcel, exportToPdf } from './exportUtils';
 import './DeclarationList.css';
@@ -40,8 +40,8 @@ const formatFirestoreTimestamp = (timestamp) => {
   return 'Geçersiz Tarih';
 };
 
-function DeclarationList({ onDeclarationsUpdate, declarationTypes = [], ledgerTypes = [] }) {
-  const [declarations, setDeclarations] = useState([]);
+function DeclarationList({ declarations, refetchDeclarations, declarationTypes = [], ledgerTypes = [] }) {
+
   const [filters, setFilters] = useState({
     month: '',
     year: '',
@@ -55,41 +55,28 @@ function DeclarationList({ onDeclarationsUpdate, declarationTypes = [], ledgerTy
   const [deleteId, setDeleteId] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
-  useEffect(() => {
-    fetchDeclarations();
-  }, []);
 
-  const fetchDeclarations = async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const res = await axios.get('https://beyanname-takip-sistemi.onrender.com/api/declarations');
-      setDeclarations(res.data);
-    if (onDeclarationsUpdate) onDeclarationsUpdate(res.data);
-    } catch (err) {
-      setError('Beyanname verileri alınamadı.');
-    }
-    setLoading(false);
-  };
 
   const handleFilterChange = (e) => {
     setFilters({ ...filters, [e.target.name]: e.target.value });
   };
 
-  const filteredDeclarations = declarations.filter(d => {
+  const filteredDeclarations = useMemo(() => {
+    if (!declarations) return []; // Eğer beyanname verisi henüz gelmediyse boş dizi döndür
+    return declarations.filter(d => {
     const m = filters.month ? d.month === parseInt(filters.month) : true;
     const y = filters.year ? d.year === parseInt(filters.year) : true;
     const t = filters.type ? d.type === filters.type : true;
     const l = filters.ledger ? d.ledger_type === filters.ledger : true;
     const s = filters.status ? d.status === filters.status : true;
-    return m && y && t && l && s;
-  }).sort((a, b) => {
-    // Müşteri adına göre Türkçe karakterleri de dikkate alarak sırala
-    if (a.customer_name && b.customer_name) {
-      return a.customer_name.localeCompare(b.customer_name, 'tr');
-    }
-    return 0; // Eğer müşteri adı yoksa sıralamayı değiştirme
-  });
+      return m && y && t && l && s;
+    }).sort((a, b) => {
+      if (a.customer_name && b.customer_name) {
+        return a.customer_name.localeCompare(b.customer_name, 'tr');
+      }
+      return 0;
+    });
+  }, [declarations, filters]);
 
   const handleStatusChange = async (id, newStatus) => {
     const completedAt = newStatus === 'Tamamlandı' ? new Date().toISOString().slice(0, 10) : null;
@@ -98,7 +85,7 @@ function DeclarationList({ onDeclarationsUpdate, declarationTypes = [], ledgerTy
       completed_at: completedAt,
       note: declarations.find(d => d.id === id)?.note || ''
     });
-    fetchDeclarations();
+    refetchDeclarations();
   };
 
   const handleNoteChange = (id, value) => {
@@ -112,7 +99,7 @@ function DeclarationList({ onDeclarationsUpdate, declarationTypes = [], ledgerTy
       completed_at: declarations.find(d => d.id === id)?.completed_at,
       note,
     });
-    fetchDeclarations();
+    refetchDeclarations();
     setNoteEdit({ ...noteEdit, [id]: undefined });
   };
 
@@ -125,7 +112,7 @@ function DeclarationList({ onDeclarationsUpdate, declarationTypes = [], ledgerTy
     if (!deleteId) return;
     try {
       await axios.delete(`https://beyanname-takip-sistemi.onrender.com/api/declarations/${deleteId}`);
-      fetchDeclarations();
+      refetchDeclarations();
     } catch (err) {
       alert('Silme işlemi sırasında hata oluştu.');
     }

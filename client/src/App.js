@@ -90,8 +90,19 @@ function App() {
     }
   };
 
+    const fetchAllDeclarations = async () => {
+    try {
+      const res = await axios.get('https://beyanname-takip-sistemi.onrender.com/api/declarations');
+      setAllDeclarations(res.data);
+    } catch (error) {
+      console.error('Error fetching declarations:', error);
+      toast.error('Beyanname listesi yüklenirken bir hata oluştu.');
+    }
+  };
+
   useEffect(() => {
     fetchCustomers();
+    fetchAllDeclarations();
   }, []);
 
   // Handlers
@@ -165,6 +176,7 @@ function App() {
       setName(''); setTaxNo(''); setLedgerType('İşletme');
       setSelectedDeclarations([]); setDeclarationMonths({});
       fetchCustomers(); // Refresh customer list
+      fetchAllDeclarations();
     } catch (err) {
       toast.error('Kayıt sırasında hata oluştu.');
       console.error(err);
@@ -188,6 +200,7 @@ function App() {
       await axios.delete(`https://beyanname-takip-sistemi.onrender.com/api/customers/${customerToDelete}`);
       toast.success('Müşteri başarıyla silindi!');
       fetchCustomers(); // Listeyi yenile
+      fetchAllDeclarations();
     } catch (error) {
       console.error('Error deleting customer:', error);
       toast.error('Müşteri silinirken bir hata oluştu.');
@@ -208,9 +221,7 @@ function App() {
     setEditModalOpen(false);
   };
 
-  const handleDeclarationsUpdate = (declarations) => {
-    setAllDeclarations(declarations);
-  };
+  
 
   const handleLoadMore = () => {
     fetchCustomers(true);
@@ -368,14 +379,14 @@ function App() {
               }
             }
             closeEditModal();
-            window.location.reload();
+            fetchAllDeclarations();
           }}
           onClose={closeEditModal}
         />
       </div>
 
       {/* Render DeclarationList separately below the main container */}
-      <DeclarationList onDeclarationsUpdate={handleDeclarationsUpdate} declarationTypes={declarationTypes} ledgerTypes={LEDGER_TYPES} />
+      <DeclarationList declarations={allDeclarations} refetchDeclarations={fetchAllDeclarations} declarationTypes={declarationTypes} ledgerTypes={LEDGER_TYPES} />
     </>
   );
 }
