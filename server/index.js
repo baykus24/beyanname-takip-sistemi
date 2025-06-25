@@ -156,18 +156,21 @@ app.get('/api/declarations', async (req, res) => {
     if (type) query = query.where('type', '==', type);
     if (status) query = query.where('status', '==', status);
 
-    // Sıralama ve sayfalama
-    // Beyannameleri en yeniden en eskiye doğru sırala.
-    // Aynı anda oluşturulan kayıtlar için sıralamayı garanti altına almak amacıyla ikinci bir sıralama kriteri olarak belge ID'si (__name__) ekleniyor.
-    // Bu, veri tekrarı sorununu kesin olarak çözer.
-    query = query.orderBy('created_at', 'desc').orderBy('__name__', 'desc').limit(Number(limit));
+    // Sıralama ve Sayfalama Mantığı
+    // 1. Önce sıralama kurallarını belirle (en yeniden en eskiye).
+    //    Veri tekrarını önlemek için ikincil, garantili bir sıralama ekle (__name__).
+    query = query.orderBy('created_at', 'desc').orderBy('__name__', 'desc');
 
+    // 2. Eğer ikinci veya sonraki bir sayfadaysak, başlangıç noktasını (cursor) belirle.
     if (lastVisible) {
       const lastVisibleDoc = await db.collection('declarations').doc(lastVisible).get();
       if (lastVisibleDoc.exists) {
         query = query.startAfter(lastVisibleDoc);
       }
     }
+
+    // 3. En son, sayfa başına gösterilecek eleman sayısını (limit) uygula.
+    query = query.limit(Number(limit));
 
     const declarationsSnapshot = await query.get();
     if (declarationsSnapshot.empty) {
