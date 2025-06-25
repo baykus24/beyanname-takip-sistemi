@@ -96,7 +96,9 @@ function App() {
         },
       });
       const newCustomers = Array.isArray(response.data.customers) ? response.data.customers : [];
-      const newLastVisible = response.data.lastVisible;
+      console.log('PRE-UPDATE: lastVisible was:', lastVisible);
+      setLastVisible(response.data.lastVisible);
+      console.log('POST-UPDATE: lastVisible is now:', response.data.lastVisible);
 
       if (loadMore) {
         setCustomers(prev => [...(Array.isArray(prev) ? prev : []), ...newCustomers]);
@@ -104,8 +106,8 @@ function App() {
         setCustomers(newCustomers);
       }
 
-      setLastVisible(newLastVisible);
-      if (!newLastVisible || newCustomers.length === 0) {
+      setLastVisible(newCustomers.length > 0 ? newCustomers[newCustomers.length - 1].id : null);
+      if (!newCustomers.length || newCustomers.length < 20) {
         setHasMore(false);
       }
     } catch (error) {
@@ -123,32 +125,44 @@ function App() {
   }, [hasMore, lastVisible]);
 
   const fetchDeclarations = useCallback(async (loadMore = false, newFilters) => {
-    if (loadMore && (isFetchingMore || !hasMoreDeclarations)) return;
+    // Prevent duplicate fetches
+    if (loadMore && (isFetchingMore || !hasMoreDeclarations)) {
+      console.log('%cSKIPPING FETCH: Already fetching or no more data.', 'color: orange;');
+      return;
+    }
+
+    console.log(`%c--- FETCHING DECLARATIONS (loadMore: ${loadMore}) ---`, 'color: blue; font-weight: bold; font-size: 14px;');
 
     if (loadMore) {
       setIsFetchingMore(true);
     } else {
       setIsLoading(true);
-      // Yeni filtreleme yapıldığında, sayfalama resetlenmeli
+      // Reset pagination for new filters
       setLastVisibleDeclaration(null);
+      console.log('LOG: New filter applied. Resetting lastVisibleDeclaration to null.');
     }
+
+    // Use a temporary variable for lastVisible to avoid state timing issues in the log
+    const currentLastVisible = loadMore ? lastVisibleDeclaration : null;
+    console.log('LOG: Using lastVisible for this fetch:', currentLastVisible);
 
     try {
       const params = new URLSearchParams({ limit: 20, ...newFilters });
-      if (loadMore && lastVisibleDeclaration) {
-        params.append('lastVisible', lastVisibleDeclaration);
+      if (currentLastVisible) {
+        params.append('lastVisible', currentLastVisible);
       }
 
-      // Boş filtreleri URL'den kaldır
+      // Clean up empty filter values from URL
       for (const [key, value] of Object.entries(newFilters)) {
         if (!value) {
           params.delete(key);
         }
       }
 
-      const url = `https://beyanname-takip-sistemi.onrender.com/api/declarations?${params.toString()}`;
+      const requestUrl = `https://beyanname-takip-sistemi.onrender.com/api/declarations?${params.toString()}`;
+      console.log('LOG: Requesting URL ->', requestUrl);
 
-      const response = await axios.get(url, {
+      const response = await axios.get(requestUrl, {
         headers: {
           'Cache-Control': 'no-cache',
           'Pragma': 'no-cache',
@@ -156,21 +170,35 @@ function App() {
         },
       });
 
+      console.log('%cLOG: API Response Received:', 'color: green; font-weight: bold;', response.data);
+
       const responseData = response.data || {};
       const newDeclarations = Array.isArray(responseData.declarations) ? responseData.declarations : [];
       const newLastVisible = responseData.lastVisible;
 
+      console.log(`LOG: Received ${newDeclarations.length} new declarations.`);
+      console.log('LOG: Received new lastVisible from server:', newLastVisible);
+
       if (loadMore) {
-        setDeclarations(prev => [...(prev || []), ...newDeclarations]);
+        setDeclarations(prev => {
+          console.log('LOG: State before "load more" update:', prev.map(d => d.id));
+          const updatedDeclarations = [...prev, ...newDeclarations];
+          console.log('LOG: State after "load more" update:', updatedDeclarations.map(d => d.id));
+          return updatedDeclarations;
+        });
       } else {
+        console.log('LOG: Setting new declarations (not loading more).');
         setDeclarations(newDeclarations);
       }
 
       setLastVisibleDeclaration(newLastVisible);
-      setHasMoreDeclarations(newDeclarations.length > 0);
+      console.log('LOG: Updated lastVisibleDeclaration state to:', newLastVisible);
+
+      setHasMoreDeclarations(newDeclarations.length > 0 && newDeclarations.length >= 20);
+      console.log(`LOG: Setting hasMoreDeclarations to: ${newDeclarations.length > 0 && newDeclarations.length >= 20}`);
 
     } catch (error) {
-      console.error('Error fetching declarations:', error);
+      console.error('%c--- FETCH DECLARATIONS FAILED ---', 'color: red; font-weight: bold; font-size: 14px;', error);
       if (error.response && error.response.data && error.response.data.details) {
         console.error('Server Error Details:', error.response.data.details);
         toast.error(`Beyanname yüklenemedi: ${error.response.data.details}`);
@@ -183,6 +211,7 @@ function App() {
       } else {
         setIsLoading(false);
       }
+      console.log('%c--- FETCH COMPLETE ---', 'color: blue; font-weight: bold; font-size: 14px;');
     }
   }, [isFetchingMore, hasMoreDeclarations, lastVisibleDeclaration]);
 
