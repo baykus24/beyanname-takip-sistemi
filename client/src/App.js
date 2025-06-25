@@ -220,8 +220,14 @@ function App() {
   }, [fetchCustomers]);
 
   useEffect(() => {
+    // Bu effect'in YALNIZCA 'filters' state'i değiştiğinde çalışmasını istiyoruz.
+    // 'fetchDeclarations' fonksiyonunu bağımlılıklardan kaldırmak, 'lastVisibleDeclaration'
+    // güncellendiğinde oluşan sonsuz döngüyü kırar. Bu, React'in standart
+    // 'exhaustive-deps' kuralını bilinçli olarak ihlal etmektir, çünkü döngüyü
+    // kırmanın en temiz yolu budur.
     fetchDeclarations(false, filters);
-  }, [filters, fetchDeclarations]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filters]);
 
   // Handlers
   const handleDeclarationChange = (type) => {
