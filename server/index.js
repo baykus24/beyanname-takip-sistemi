@@ -157,8 +157,10 @@ app.get('/api/declarations', async (req, res) => {
     if (status) query = query.where('status', '==', status);
 
     // Sıralama ve sayfalama
-    // Beyannameleri en yeniden en eskiye doğru sırala
-    query = query.orderBy('created_at', 'desc').limit(Number(limit));
+    // Beyannameleri en yeniden en eskiye doğru sırala.
+    // Aynı anda oluşturulan kayıtlar için sıralamayı garanti altına almak amacıyla ikinci bir sıralama kriteri olarak belge ID'si (__name__) ekleniyor.
+    // Bu, veri tekrarı sorununu kesin olarak çözer.
+    query = query.orderBy('created_at', 'desc').orderBy('__name__', 'desc').limit(Number(limit));
 
     if (lastVisible) {
       const lastVisibleDoc = await db.collection('declarations').doc(lastVisible).get();
