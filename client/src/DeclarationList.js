@@ -1,5 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import axios from 'axios';
+import DeclarationRow from './DeclarationRow';
+import DeclarationRowSkeleton from './DeclarationRowSkeleton';
 import { exportToExcel, exportToPdf } from './exportUtils';
 import './DeclarationList.css';
 import ConfirmModal from './ConfirmModal';
@@ -40,70 +42,56 @@ const formatFirestoreTimestamp = (timestamp) => {
   return 'Geçersiz Tarih';
 };
 
-function DeclarationList({ declarations, isLoading, refetchDeclarations, declarationTypes = [], ledgerTypes = [] }) {
+function DeclarationList({ declarations, refetchDeclarations, isLoading, declarationTypes, ledgerTypes, loadMoreDeclarations, hasMoreDeclarations, onStatusChange, onNoteUpdate, isFetchingMore, filters, onFilterChange }) {
 
-  const [filters, setFilters] = useState({
-    month: '',
-    year: '',
-    type: '',
-    ledger: '',
-    status: '',
-  });
   const [noteEdit, setNoteEdit] = useState({});
   const [deleteId, setDeleteId] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
 
 
-  const handleFilterChange = (e) => {
-    setFilters({ ...filters, [e.target.name]: e.target.value });
-  };
 
-  const filteredDeclarations = (declarations || [])
-    .filter(d => {
-      const m = filters.month ? d.month === parseInt(filters.month) : true;
-      const y = filters.year ? d.year === parseInt(filters.year) : true;
-      const t = filters.type ? d.type === filters.type : true;
-      const l = filters.ledger ? d.ledger_type === filters.ledger : true;
-      const s = filters.status ? d.status === filters.status : true;
-      return m && y && t && l && s;
-    })
-    .sort((a, b) => {
+
+  const sortedDeclarations = useMemo(() => 
+    (declarations || []).sort((a, b) => {
       if (a.customer_name && b.customer_name) {
         return a.customer_name.localeCompare(b.customer_name, 'tr');
       }
       return 0;
-    });
+    }),
+    [declarations]
+  );
 
-  const handleStatusChange = async (id, newStatus) => {
-    const completedAt = newStatus === 'Tamamlandı' ? new Date().toISOString().slice(0, 10) : null;
-    await axios.put(`https://beyanname-takip-sistemi.onrender.com/api/declarations/${id}`, {
-      status: newStatus,
-      completed_at: completedAt,
-      note: declarations.find(d => d.id === id)?.note || ''
-    });
-    refetchDeclarations();
-  };
 
-  const handleNoteChange = (id, value) => {
-    setNoteEdit({ ...noteEdit, [id]: value });
-  };
 
-  const handleNoteSave = async (id) => {
-    const note = noteEdit[id] || '';
-    await axios.put(`https://beyanname-takip-sistemi.onrender.com/api/declarations/${id}`, {
-      status: declarations.find(d => d.id === id)?.status,
-      completed_at: declarations.find(d => d.id === id)?.completed_at,
-      note,
-    });
-    refetchDeclarations();
-    setNoteEdit({ ...noteEdit, [id]: undefined });
-  };
+  const handleNoteChange = useCallback((id, value) => {
+    setNoteEdit(prev => ({ ...prev, [id]: value }));
+  }, []);
 
-  const openDeleteModal = (id) => {
+  const handleNoteEditStart = useCallback((id, currentNote) => {
+    setNoteEdit(prev => ({ ...prev, [id]: currentNote }));
+  }, []);
+
+  const handleNoteSave = useCallback(async (id) => {
+    // Notu optimistic update için App.js'e gönder
+    if (onNoteUpdate) {
+      // noteEdit state'inin en güncel halini fonksiyonel olarak al
+      let noteToSave;
+      setNoteEdit(currentNoteEdit => {
+        noteToSave = currentNoteEdit[id] || '';
+        // Notu kaydettikten sonra düzenleme modundan çık
+        const newNotes = { ...currentNoteEdit };
+        delete newNotes[id];
+        return newNotes;
+      });
+      await onNoteUpdate(id, noteToSave);
+    }
+  }, [onNoteUpdate]); // noteEdit bağımlılığını kaldırdık
+
+  const openDeleteModal = useCallback((id) => {
     setDeleteId(id);
     setShowDeleteModal(true);
-  };
+  }, []);
 
   const handleDelete = async () => {
     if (!deleteId) return;
@@ -118,7 +106,7 @@ function DeclarationList({ declarations, isLoading, refetchDeclarations, declara
   };
 
   const handleExportExcel = () => {
-    const dataToExport = filteredDeclarations.map(d => ({
+    const dataToExport = sortedDeclarations.map(d => ({
       'Müşteri Adı': d.customer_name,
       'Beyanname Türü': d.type,
       'Dönem': `${d.month}/${d.year}`,
@@ -134,7 +122,7 @@ function DeclarationList({ declarations, isLoading, refetchDeclarations, declara
       { header: 'Dönem', dataKey: 'period' }, 
       { header: 'Durum', dataKey: 'status' },
     ];
-    const dataToExport = filteredDeclarations.map(d => ({ ...d, period: `${d.month}/${d.year}` }));
+    const dataToExport = sortedDeclarations.map(d => ({ ...d, period: `${d.month}/${d.year}` }));
     exportToPdf('Beyanname Listesi', columns, dataToExport, 'beyanname_listesi');
   };
 
@@ -154,31 +142,31 @@ function DeclarationList({ declarations, isLoading, refetchDeclarations, declara
         <button onClick={handleExportPdf} className="export-btn pdf">PDF'e Aktar</button>
       </div>
       <div className="filters">
-        <select name="month" value={filters.month} onChange={handleFilterChange}>
+        <select name="month" value={filters.month} onChange={onFilterChange}>
           <option value="">Ay Seçin</option>
           {MONTHS.map((m, i) => (
             <option key={m} value={i + 1}>{m}</option>
           ))}
         </select>
-        <select name="year" value={filters.year} onChange={handleFilterChange}>
+        <select name="year" value={filters.year} onChange={onFilterChange}>
           <option value="">Yıl Seçin</option>
           {YEARS.map(y => (
             <option key={y} value={y}>{y}</option>
           ))}
         </select>
-        <select name="type" value={filters.type} onChange={handleFilterChange}>
+        <select name="type" value={filters.type} onChange={onFilterChange}>
           <option value="">Beyanname Türü Seçin</option>
           {declarationTypes.map(t => (
             <option key={t} value={t}>{t}</option>
           ))}
         </select>
-        <select name="ledger" value={filters.ledger} onChange={handleFilterChange}>
+        <select name="ledger" value={filters.ledger} onChange={onFilterChange}>
           <option value="">Defter Türü Seçin</option>
           {ledgerTypes.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
-        <select name="status" value={filters.status} onChange={handleFilterChange}>
+        <select name="status" value={filters.status} onChange={onFilterChange}>
           <option value="">Durum Seçin</option>
           {STATUS_OPTIONS.map(opt => (
             <option key={opt.value} value={opt.value}>{opt.label}</option>
@@ -198,44 +186,36 @@ function DeclarationList({ declarations, isLoading, refetchDeclarations, declara
           </tr>
         </thead>
         <tbody>
-          {filteredDeclarations.map(d => (
-            <tr key={d.id}>
-              <td>{MONTHS[d.month - 1]} / {d.year}</td>
-              <td>{d.type}</td>
-              <td>{d.customer_name}</td>
-              <td>{d.ledger_type}</td>
-              <td>
-                <select value={d.status} onChange={e => handleStatusChange(d.id, e.target.value)}>
-                  {STATUS_OPTIONS.map(opt => (
-                    <option key={opt.value} value={opt.value}>{opt.label}</option>
-                  ))}
-                </select>
-              </td>
-                            <td>{formatFirestoreTimestamp(d.completed_at)}</td>
-              <td>
-                {noteEdit[d.id] !== undefined ? (
-                  <>
-                    <input value={noteEdit[d.id]} onChange={e => handleNoteChange(d.id, e.target.value)} />
-                    <button onClick={() => handleNoteSave(d.id)}>Kaydet</button>
-                  </>
-                ) : (
-                  <>
-                    {d.note || ''} <button onClick={() => setNoteEdit({ ...noteEdit, [d.id]: d.note || '' })}>Düzenle</button>
-                  </>
-                )}
-              </td>
-              <td>
-                <button style={{color: 'white', background: '#dc3545', border: 'none', borderRadius: 4, padding: '2px 8px', cursor: 'pointer'}} onClick={() => openDeleteModal(d.id)}>
-                  Sil
-                </button>
-              </td>
-            </tr>
-          ))}
+          {(isLoading && declarations.length === 0) ? (
+            Array.from({ length: 10 }).map((_, index) => <DeclarationRowSkeleton key={`initial-skeleton-${index}`} />)
+          ) : (
+            sortedDeclarations.map(d => (
+              <DeclarationRow
+                key={d.id}
+                declaration={d}
+                noteEditValue={noteEdit[d.id]}
+                onStatusChange={onStatusChange}
+                onNoteChange={handleNoteChange}
+                onNoteSave={handleNoteSave}
+                onNoteEditStart={handleNoteEditStart}
+                onDelete={openDeleteModal}
+              />
+            ))
+          )}
+          {isFetchingMore && (
+            Array.from({ length: 5 }).map((_, index) => <DeclarationRowSkeleton key={`more-skeleton-${index}`} />)
+          )}
         </tbody>
       </table>
-      {!isLoading && filteredDeclarations.length === 0 && (
-        <div style={{ textAlign: 'center', padding: '20px', color: '#666' }}>
-          Gösterilecek beyanname bulunamadı.
+      {!isLoading && sortedDeclarations.length === 0 && (
+        <div className="no-declarations-message">Gösterilecek beyanname bulunamadı.</div>
+      )}
+
+      {hasMoreDeclarations && (
+        <div style={{ textAlign: 'center', margin: '20px 0' }}>
+          <button onClick={loadMoreDeclarations} disabled={isFetchingMore || isLoading} className="load-more-btn">
+            {isFetchingMore ? 'Yükleniyor...' : 'Daha Fazla Yükle'}
+          </button>
         </div>
       )}
     </div>

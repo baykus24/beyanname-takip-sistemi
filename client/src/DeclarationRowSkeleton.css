@@ -1,0 +1,39 @@
+.skeleton-row {
+    opacity: 0.7;
+  }
+  
+  @keyframes skeleton-loading {
+    0% {
+      background-color: hsl(200, 20%, 80%);
+    }
+    100% {
+      background-color: hsl(200, 20%, 95%);
+    }
+  }
+  
+  .skeleton-text, .skeleton-select, .skeleton-text-long, .skeleton-button {
+    animation: skeleton-loading 1s linear infinite alternate;
+    border-radius: 4px;
+    background-color: #eee;
+    height: 20px;
+    margin: 4px 0;
+  }
+  
+  .skeleton-text {
+    width: 80%;
+  }
+
+  .skeleton-text-long {
+    width: 95%;
+  }
+  
+  .skeleton-select {
+    width: 100px;
+    height: 30px;
+  }
+
+  .skeleton-button {
+    width: 50px;
+    height: 25px;
+  }
+  

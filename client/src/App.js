@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { ToastContainer, toast } from 'react-toastify';
 import { Puff } from 'react-loader-spinner';
@@ -28,9 +28,10 @@ function App() {
   const [name, setName] = useState('');
   const [taxNo, setTaxNo] = useState('');
   const [ledgerType, setLedgerType] = useState('İşletme');
-  const [selectedDeclarations, setSelectedDeclarations] = useState([]);
-  const [declarationMonths, setDeclarationMonths] = useState({});
+  const [selectedDeclarations, setSelectedDeclarations] = useState({});
+  const [declarations, setDeclarations] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
 
   // Customer List State
   const [customers, setCustomers] = useState([]);
@@ -39,10 +40,17 @@ function App() {
   const [hasMore, setHasMore] = useState(true);
 
   // Declaration & Modal State
-  const [allDeclarations, setAllDeclarations] = useState([]);
-  const [isDeclLoading, setIsDeclLoading] = useState(false);
+  const [lastVisibleDeclaration, setLastVisibleDeclaration] = useState(null);
+  const [hasMoreDeclarations, setHasMoreDeclarations] = useState(true);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editCustomer, setEditCustomer] = useState(null);
+  const [filters, setFilters] = useState({
+    month: '',
+    year: '',
+    type: '',
+    ledger: '',
+    status: '',
+  });
   
   // Onay Modalı için State
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
@@ -51,8 +59,18 @@ function App() {
   // Dynamic Declaration Types State
   const [customDeclInput, setCustomDeclInput] = useState('');
   const [declarationTypes, setDeclarationTypes] = useState(() => {
-    const saved = localStorage.getItem('declarationTypes');
-    return saved ? JSON.parse(saved) : DEFAULT_DECLARATION_TYPES;
+    try {
+      const saved = localStorage.getItem('declarationTypes');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+      }
+    } catch (error) {
+      console.error("Failed to parse declarationTypes from localStorage", error);
+    }
+    return DEFAULT_DECLARATION_TYPES;
   });
 
   useEffect(() => {
@@ -60,7 +78,7 @@ function App() {
   }, [declarationTypes]);
 
   // Data Fetching
-    const fetchCustomers = async (loadMore = false) => {
+  const fetchCustomers = useCallback(async (loadMore = false) => {
     if (!hasMore && loadMore) return;
     if (!loadMore) setIsLoading(true);
 
@@ -77,10 +95,11 @@ function App() {
           'Expires': '0',
         },
       });
-      const { customers: newCustomers, lastVisible: newLastVisible } = response.data;
+      const newCustomers = Array.isArray(response.data.customers) ? response.data.customers : [];
+      const newLastVisible = response.data.lastVisible;
 
       if (loadMore) {
-        setCustomers(prev => [...prev, ...newCustomers]);
+        setCustomers(prev => [...(Array.isArray(prev) ? prev : []), ...newCustomers]);
       } else {
         setCustomers(newCustomers);
       }
@@ -91,41 +110,101 @@ function App() {
       }
     } catch (error) {
       console.error('Error fetching customers:', error);
-      toast.error('Müşteriler yüklenirken bir hata oluştu.');
+      // Sunucudan gelen detaylı hatayı logla
+      if (error.response && error.response.data && error.response.data.details) {
+        console.error('Server Error Details:', error.response.data.details);
+        toast.error(`Müşteri yüklenemedi: ${error.response.data.details}`);
+      } else {
+        toast.error('Müşteriler yüklenirken bir hata oluştu.');
+      }
     } finally {
       if (!loadMore) setIsLoading(false);
     }
-  };
+  }, [hasMore, lastVisible]);
 
-    const fetchAllDeclarations = async () => {
-    setIsDeclLoading(true);
+  const fetchDeclarations = useCallback(async (loadMore = false, newFilters) => {
+    if (loadMore && (isFetchingMore || !hasMoreDeclarations)) return;
+
+    if (loadMore) {
+      setIsFetchingMore(true);
+    } else {
+      setIsLoading(true);
+      // Yeni filtreleme yapıldığında, sayfalama resetlenmeli
+      setLastVisibleDeclaration(null);
+    }
+
     try {
-            const res = await axios.get('https://beyanname-takip-sistemi.onrender.com/api/declarations', {
+      const params = new URLSearchParams({ limit: 20, ...newFilters });
+      if (loadMore && lastVisibleDeclaration) {
+        params.append('lastVisible', lastVisibleDeclaration);
+      }
+
+      // Boş filtreleri URL'den kaldır
+      for (const [key, value] of Object.entries(newFilters)) {
+        if (!value) {
+          params.delete(key);
+        }
+      }
+
+      const url = `https://beyanname-takip-sistemi.onrender.com/api/declarations?${params.toString()}`;
+
+      const response = await axios.get(url, {
         headers: {
           'Cache-Control': 'no-cache',
           'Pragma': 'no-cache',
           'Expires': '0',
         },
       });
-      setAllDeclarations(res.data);
+
+      const responseData = response.data || {};
+      const newDeclarations = Array.isArray(responseData.declarations) ? responseData.declarations : [];
+      const newLastVisible = responseData.lastVisible;
+
+      if (loadMore) {
+        setDeclarations(prev => [...(prev || []), ...newDeclarations]);
+      } else {
+        setDeclarations(newDeclarations);
+      }
+
+      setLastVisibleDeclaration(newLastVisible);
+      setHasMoreDeclarations(newDeclarations.length > 0);
+
     } catch (error) {
       console.error('Error fetching declarations:', error);
-      toast.error('Beyanname listesi yüklenirken bir hata oluştu.');
+      if (error.response && error.response.data && error.response.data.details) {
+        console.error('Server Error Details:', error.response.data.details);
+        toast.error(`Beyanname yüklenemedi: ${error.response.data.details}`);
+      } else {
+        toast.error('Beyannameler yüklenirken bir hata oluştu.');
+      }
     } finally {
-      setIsDeclLoading(false);
+      if (loadMore) {
+        setIsFetchingMore(false);
+      } else {
+        setIsLoading(false);
+      }
     }
-  };
+  }, [isFetchingMore, hasMoreDeclarations, lastVisibleDeclaration]);
 
   useEffect(() => {
     fetchCustomers();
-    fetchAllDeclarations();
-  }, []);
+  }, [fetchCustomers]);
+
+  useEffect(() => {
+    fetchDeclarations(false, filters);
+  }, [filters, fetchDeclarations]);
 
   // Handlers
   const handleDeclarationChange = (type) => {
-    setSelectedDeclarations(prev =>
-      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
-    );
+    setSelectedDeclarations(prev => {
+      const newDeclarations = { ...prev };
+      if (newDeclarations[type]) {
+        delete newDeclarations[type];
+      } else {
+        newDeclarations[type] = []; // Initialize with empty months array
+      }
+      return newDeclarations;
+    });
   };
 
   const handleMonthChange = (type, month) => {
@@ -192,7 +271,7 @@ function App() {
       setName(''); setTaxNo(''); setLedgerType('İşletme');
       setSelectedDeclarations([]); setDeclarationMonths({});
       fetchCustomers(); // Refresh customer list
-      fetchAllDeclarations();
+      fetchDeclarations();
     } catch (err) {
       toast.error('Kayıt sırasında hata oluştu.');
       console.error(err);
@@ -216,16 +295,85 @@ function App() {
       await axios.delete(`https://beyanname-takip-sistemi.onrender.com/api/customers/${customerToDelete}`);
       toast.success('Müşteri başarıyla silindi!');
       fetchCustomers(); // Listeyi yenile
-      fetchAllDeclarations();
+      fetchDeclarations();
     } catch (error) {
       console.error('Error deleting customer:', error);
-      toast.error('Müşteri silinirken bir hata oluştu.');
+      if (error.response && error.response.data && error.response.data.details) {
+        console.error('Server Error Details:', error.response.data.details);
+        toast.error(`Müşteri silinirken hata oluştu: ${error.response.data.details}`);
+      } else {
+        toast.error('Müşteri silinirken bir hata oluştu.');
+      }
     } finally {
       setIsLoading(false);
       setCustomerToDelete(null);
       setIsConfirmModalOpen(false);
     }
   };
+
+  const handleDeclarationStatusUpdate = useCallback(async (declarationId, newStatus) => {
+    let originalDeclaration;
+
+    setDeclarations(prevDeclarations => {
+      const declarationIndex = prevDeclarations.findIndex(d => d.id === declarationId);
+      if (declarationIndex === -1) {
+        toast.error("Güncellenecek beyanname bulunamadı.");
+        return prevDeclarations;
+      }
+      originalDeclaration = prevDeclarations[declarationIndex];
+      const updatedDeclarations = [...prevDeclarations];
+      const completedAt = newStatus === 'Tamamlandı' ? new Date().toISOString() : null;
+      updatedDeclarations[declarationIndex] = { ...originalDeclaration, status: newStatus, completed_at: completedAt };
+      return updatedDeclarations;
+    });
+
+    try {
+      await axios.put(`https://beyanname-takip-sistemi.onrender.com/api/declarations/${declarationId}`, {
+        status: newStatus,
+        completed_at: newStatus === 'Tamamlandı' ? new Date().toISOString() : null,
+        note: originalDeclaration?.note || ''
+      });
+    } catch (error) {
+      toast.error('Durum güncellenemedi. Değişiklikler geri alınıyor.');
+      setDeclarations(prevDeclarations => {
+        const declarationIndex = prevDeclarations.findIndex(d => d.id === declarationId);
+        if (declarationIndex === -1) return prevDeclarations;
+        const revertedDeclarations = [...prevDeclarations];
+        revertedDeclarations[declarationIndex] = originalDeclaration;
+        return revertedDeclarations;
+      });
+    }
+  }, []);
+
+  const handleDeclarationNoteUpdate = useCallback(async (declarationId, newNote) => {
+    let originalDeclaration;
+
+    setDeclarations(prevDeclarations => {
+        const declarationIndex = prevDeclarations.findIndex(d => d.id === declarationId);
+        if (declarationIndex === -1) return prevDeclarations;
+        originalDeclaration = prevDeclarations[declarationIndex];
+        const updatedDeclarations = [...prevDeclarations];
+        updatedDeclarations[declarationIndex] = { ...originalDeclaration, note: newNote };
+        return updatedDeclarations;
+    });
+
+    try {
+      await axios.put(`https://beyanname-takip-sistemi.onrender.com/api/declarations/${declarationId}`, {
+        status: originalDeclaration?.status,
+        completed_at: originalDeclaration?.completed_at,
+        note: newNote,
+      });
+    } catch (error) {
+      toast.error('Not güncellenemedi. Değişiklikler geri alınıyor.');
+      setDeclarations(prevDeclarations => {
+        const declarationIndex = prevDeclarations.findIndex(d => d.id === declarationId);
+        if (declarationIndex === -1) return prevDeclarations;
+        const revertedDeclarations = [...prevDeclarations];
+        revertedDeclarations[declarationIndex] = originalDeclaration;
+        return revertedDeclarations;
+      });
+    }
+  }, []);
 
   const openEditModal = (customer) => {
     setEditCustomer(customer);
@@ -238,6 +386,14 @@ function App() {
   };
 
   
+
+  const handleFilterChange = (e) => {
+    setFilters({ ...filters, [e.target.name]: e.target.value });
+  };
+
+  const loadMoreDeclarations = () => {
+    fetchDeclarations(true, filters);
+  };
 
   const handleLoadMore = () => {
     fetchCustomers(true);
@@ -304,7 +460,7 @@ function App() {
               {declarationTypes.map(type => (
                 <span key={type} style={{ display: 'inline-flex', alignItems: 'center', marginRight: 10, marginBottom: 6 }}>
                   <label style={{ marginRight: 4 }}>
-                    <input type="checkbox" checked={selectedDeclarations.includes(type)} onChange={() => handleDeclarationChange(type)} /> {type}
+                    <input type="checkbox" checked={selectedDeclarations[type]?.length > 0} onChange={() => handleDeclarationChange(type)} /> {type}
                   </label>
                   <button type="button" onClick={() => handleDeclRemove(type)} style={{ marginLeft: 2, background: '#dc3545', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: 12 }}>Sil</button>
                 </span>
@@ -324,7 +480,7 @@ function App() {
           </div>
 
           {/* Month Selection for selected declarations */}
-          {selectedDeclarations.map(type => (
+          {Object.keys(selectedDeclarations).map(type => (
             <div key={type} className="months-select">
               <label>{type} için Aylar:</label>
               <button type="button" onClick={() => handleSelectAllMonths(type)} style={{ marginLeft: '10px', fontSize: '12px', padding: '2px 8px', cursor: 'pointer' }}>
@@ -342,8 +498,10 @@ function App() {
 
           <button type="submit" disabled={isLoading}>{isLoading ? 'Kaydediliyor...' : 'Kaydet'}</button>
         </form>
+      </div>
 
-                <div className="list-header">
+      <div className="list-container">
+        <div className="list-header">
           <h3>Kayıtlı Müşteriler</h3>
           <div className="export-buttons">
             <button onClick={handleExportExcel} className="export-btn excel">Excel'e Aktar</button>
@@ -375,10 +533,10 @@ function App() {
         <EditDeclarationsModal
           open={editModalOpen}
           customer={editCustomer}
-          declarations={allDeclarations}
+          declarations={declarations}
           onSave={async (selected, months) => {
             if (!editCustomer) return;
-            const customerDecls = allDeclarations.filter(d => d.customer_id === editCustomer.id);
+            const customerDecls = declarations.filter(d => d.customer_id === editCustomer.id);
             for (const decl of customerDecls) {
               await axios.delete(`https://beyanname-takip-sistemi.onrender.com/api/declarations/${decl.id}`);
             }
@@ -395,14 +553,28 @@ function App() {
               }
             }
             closeEditModal();
-            fetchAllDeclarations();
+            fetchDeclarations();
           }}
           onClose={closeEditModal}
         />
-      </div>
+    </div>
 
-      {/* Render DeclarationList separately below the main container */}
-      <DeclarationList declarations={allDeclarations} isLoading={isDeclLoading} refetchDeclarations={fetchAllDeclarations} declarationTypes={declarationTypes} ledgerTypes={LEDGER_TYPES} />
+    <div className="right-panel">
+      <DeclarationList 
+        declarations={declarations} 
+        refetchDeclarations={() => fetchDeclarations(false, filters)} 
+        isLoading={isLoading}
+        isFetchingMore={isFetchingMore}
+        declarationTypes={declarationTypes}
+        ledgerTypes={LEDGER_TYPES}
+        loadMoreDeclarations={loadMoreDeclarations}
+        hasMoreDeclarations={hasMoreDeclarations}
+        onStatusChange={handleDeclarationStatusUpdate}
+        onNoteUpdate={handleDeclarationNoteUpdate}
+        filters={filters}
+        onFilterChange={handleFilterChange}
+      />
+    </div>
     </>
   );
 }

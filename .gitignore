@@ -3,3 +3,7 @@ client/node_modules/
 server/node_modules/
 db.sqlite
 .env
+*.env
+
+# Firebase service account key
+server/firebase-service-account-key.json

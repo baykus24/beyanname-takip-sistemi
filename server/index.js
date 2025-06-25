@@ -32,7 +32,25 @@ admin.initializeApp({
 const db = admin.firestore();
 const app = express();
 
-app.use(cors());
+// --- CORS Ayarları ---
+// Gelen isteklerin hangi kaynaklardan kabul edileceğini belirtin.
+const allowedOrigins = [
+  'http://localhost:3000', // Geliştirme ortamı için
+  'https://lively-malasada-eba26f.netlify.app' // Netlify'daki siteniz için
+];
+
+const corsOptions = {
+  origin: function (origin, callback) {
+    // Eğer istek gelen kaynak izinli listesindeyse veya kaynak yoksa (örn. Postman gibi araçlar)
+    if (allowedOrigins.indexOf(origin) !== -1 || !origin) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  }
+};
+
+app.use(cors(corsOptions)); // CORS'u bu seçeneklerle etkinleştirin
 app.use(bodyParser.json());
 
 // Müşteri ekle
@@ -79,7 +97,7 @@ app.get('/api/customers', async (req, res) => {
 
   } catch (error) {
     console.error('Error fetching customers:', error);
-    res.status(500).send('Server Error');
+    res.status(500).json({ error: 'Failed to fetch customers', details: error.message });
   }
 });
 
@@ -113,38 +131,86 @@ app.post('/api/declarations', async (req, res) => {
   }
 });
 
-// Beyannameleri getir
+// Beyannameleri getir (Filtreleme ve Sayfalama ile)
 app.get('/api/declarations', async (req, res) => {
   try {
-    const declarationsSnapshot = await db.collection('declarations').orderBy('created_at', 'desc').get();
-    const declarations = [];
-    // Müşteri bilgilerini de almak için (performans açısından dikkatli olun)
-    // Her beyanname için ayrı müşteri sorgusu yapmak yerine,
-    // istemci tarafında müşteri listesini alıp birleştirmek daha verimli olabilir
-    // veya beyanname dokümanına müşteri adını da ekleyebilirsiniz (denormalizasyon).
-    // Bu örnekte basit tutulmuştur.
-    for (const doc of declarationsSnapshot.docs) {
-      const declarationData = doc.data();
-      let customerName = 'N/A';
-      let ledgerType = 'N/A';
-      if (declarationData.customer_id) {
-        const customerDoc = await db.collection('customers').doc(declarationData.customer_id).get();
-        if (customerDoc.exists) {
-          customerName = customerDoc.data().name;
-          ledgerType = customerDoc.data().ledger_type;
-        }
+    const { limit = 20, lastVisible, month, year, type, status, ledger } = req.query;
+    let query = db.collection('declarations');
+
+    // Defter türüne göre filtreleme (customer koleksiyonundan ID'leri alarak)
+    if (ledger) {
+      const customersSnapshot = await db.collection('customers').where('ledger_type', '==', ledger).get();
+      const customerIds = customersSnapshot.docs.map(doc => doc.id);
+
+      if (customerIds.length === 0) {
+        // Eşleşen müşteri yoksa boş sonuç dön
+        return res.json({ declarations: [], lastVisible: null });
       }
-      declarations.push({ 
-        id: doc.id, 
-        ...declarationData,
-        customer_name: customerName, // İstemcinin beklediği alan
-        ledger_type: ledgerType // İstemcinin beklediği alan
+      // Firestore 'in' sorgusu en fazla 30 değere izin verir. Büyük veri setleri için burayı daha sağlam hale getirmek gerekebilir.
+      query = query.where('customer_id', 'in', customerIds);
+    }
+
+    // Diğer filteleri uygula
+    if (month) query = query.where('month', '==', parseInt(month, 10));
+    if (year) query = query.where('year', '==', parseInt(year, 10));
+    if (type) query = query.where('type', '==', type);
+    if (status) query = query.where('status', '==', status);
+
+    // Sıralama ve sayfalama
+    query = query.orderBy('created_at', 'desc').limit(Number(limit));
+
+    if (lastVisible) {
+      const lastVisibleDoc = await db.collection('declarations').doc(lastVisible).get();
+      if (lastVisibleDoc.exists) {
+        query = query.startAfter(lastVisibleDoc);
+      }
+    }
+
+    const declarationsSnapshot = await query.get();
+    if (declarationsSnapshot.empty) {
+      return res.json({ declarations: [], lastVisible: null });
+    }
+
+    // Müşteri verilerini toplu çekme
+    const customerIds = [...new Set(declarationsSnapshot.docs.map(doc => doc.data().customer_id).filter(id => id))];
+    let customersMap = new Map();
+    if (customerIds.length > 0) {
+      const customerPromises = [];
+      for (let i = 0; i < customerIds.length; i += 30) { // 'in' sorgusu 30 elemanla sınırlıdır
+        const chunk = customerIds.slice(i, i + 30);
+        customerPromises.push(
+          db.collection('customers').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get()
+        );
+      }
+      const customerSnapshots = await Promise.all(customerPromises);
+      customerSnapshots.forEach(snapshot => {
+        snapshot.forEach(doc => {
+          customersMap.set(doc.id, doc.data());
+        });
       });
     }
-    res.json(declarations);
+
+    const declarations = declarationsSnapshot.docs.map(doc => {
+      const declarationData = doc.data();
+      const customerData = customersMap.get(declarationData.customer_id) || { name: 'Bilinmeyen Müşteri', ledger_type: 'N/A' };
+      return {
+        id: doc.id,
+        ...declarationData,
+        customer_name: customerData.name,
+        ledger_type: customerData.ledger_type
+      };
+    });
+
+    const newLastVisible = declarationsSnapshot.docs.length > 0 ? declarationsSnapshot.docs[declarationsSnapshot.docs.length - 1].id : null;
+
+    res.json({
+      declarations,
+      lastVisible: newLastVisible
+    });
+
   } catch (error) {
     console.error('Error fetching declarations:', error);
-    res.status(500).json({ error: 'Failed to fetch declarations' });
+    res.status(500).json({ error: 'Failed to fetch declarations', details: error.message });
   }
 });
 
