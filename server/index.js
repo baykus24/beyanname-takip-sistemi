@@ -157,15 +157,7 @@ app.get('/api/declarations', async (req, res) => {
     if (status) query = query.where('status', '==', status);
 
     // Sıralama ve sayfalama
-    // Firestore'da tutarlı sonuçlar için, ilk where filtresiyle aynı alana göre sıralama yapmak genellikle en iyisidir.
-    // Burada birden çok filtre olabileceğinden, ana sıralamayı oluşturulma tarihi olarak tutuyoruz ama bu, filtrelere bağlı olarak gözden geçirilebilir.
-    // Şimdilik, en yaygın sorgu olan ay ve yıla göre sıralama ekleyelim.
-    if (year) {
-      query = query.orderBy('year', 'desc');
-    }
-    if (month) {
-      query = query.orderBy('month', 'desc');
-    }
+    // Beyannameleri en yeniden en eskiye doğru sırala
     query = query.orderBy('created_at', 'desc').limit(Number(limit));
 
     if (lastVisible) {
