@@ -60,11 +60,14 @@ app.post('/api/customers', async (req, res) => {
     if (!name || !tax_no || !ledger_type) {
       return res.status(400).json({ error: 'Missing required fields: name, tax_no, ledger_type' });
     }
-    const customerRef = await db.collection('customers').add({
-      name,
-      tax_no,
-      ledger_type
-    });
+    // Explicitly create the object to be saved to prevent any issues.
+    const newCustomer = {
+      name: name,
+      tax_no: tax_no,
+      ledger_type: ledger_type,
+      created_at: admin.firestore.FieldValue.serverTimestamp()
+    };
+    const customerRef = await db.collection('customers').add(newCustomer);
     res.status(201).json({ id: customerRef.id });
   } catch (error) {
     console.error('Error adding customer:', error);
@@ -104,22 +107,28 @@ app.get('/api/customers', async (req, res) => {
 // Beyanname ekle
 app.post('/api/declarations', async (req, res) => {
   try {
-    const { customer_id, type, month, year } = req.body;
+    // ledger_type is now accepted directly from the body for robustness.
+    const { customer_id, type, month, year, ledger_type: direct_ledger_type } = req.body;
     if (!customer_id || !type || !month || !year) {
       return res.status(400).json({ error: 'Missing required fields: customer_id, type, month, year' });
     }
 
-    // Fetch the customer to get their ledger_type for data denormalization
-    const customerDoc = await db.collection('customers').doc(customer_id).get();
-    if (!customerDoc.exists) {
-      return res.status(404).json({ error: 'Customer not found' });
-    }
-    const customerData = customerDoc.data();
-    const ledger_type = customerData.ledger_type;
+    let final_ledger_type = direct_ledger_type;
 
-    // Enforce data integrity. Every customer must have a ledger_type.
-    if (!ledger_type) {
-      console.error(`[SERVER-ERROR] Critical data integrity issue: Customer with ID ${customer_id} is missing a ledger_type.`);
+    // If the ledger_type was not passed directly (for older clients or other uses), fetch it from the customer as a fallback.
+    if (!final_ledger_type) {
+        console.log(`[SERVER-LOG] Ledger type not passed directly for customer ${customer_id}, fetching from customer doc...`);
+        const customerDoc = await db.collection('customers').doc(customer_id).get();
+        if (!customerDoc.exists) {
+          return res.status(404).json({ error: 'Customer not found' });
+        }
+        const customerData = customerDoc.data();
+        final_ledger_type = customerData.ledger_type;
+    }
+
+    // Enforce data integrity. Every declaration must have a ledger_type.
+    if (!final_ledger_type) {
+      console.error(`[SERVER-ERROR] Critical data integrity issue: Could not determine ledger_type for customer ${customer_id}.`);
       return res.status(500).json({ error: `Customer data is incomplete and missing a ledger_type.` });
     }
 
@@ -132,7 +141,7 @@ app.post('/api/declarations', async (req, res) => {
       created_at: admin.firestore.FieldValue.serverTimestamp(),
       completed_at: null,
       note: '',
-      ledger_type: ledger_type // Add the ledger_type for efficient filtering
+      ledger_type: final_ledger_type // Use the determined ledger_type
     });
     res.status(201).json({ id: declarationRef.id });
   } catch (error) {
@@ -256,6 +265,71 @@ app.get('/api/declarations', async (req, res) => {
 
 // Temporary Migration Endpoint to backfill 'ledger_type' in existing declarations.
 // This should be removed after the one-time migration is complete.
+// TEMPORARY MIGRATION ENDPOINT
+// This endpoint finds all declarations missing a 'ledger_type' and backfills it from the parent customer.
+// This should be run once and then removed.
+app.get('/api/migrate/add-ledger-type-to-declarations', async (req, res) => {
+  try {
+    console.log('[MIGRATION] Starting: Backfill ledger_type for declarations...');
+
+    // 1. Get all customers and create a map of their ledger types.
+    const customersSnapshot = await db.collection('customers').get();
+    const customerLedgerMap = new Map();
+    customersSnapshot.forEach(doc => {
+      const customerData = doc.data();
+      if (doc.id && customerData.ledger_type) {
+        customerLedgerMap.set(doc.id, customerData.ledger_type);
+      }
+    });
+    console.log(`[MIGRATION] Indexed ${customerLedgerMap.size} customers with a ledger_type.`);
+
+    // 2. Find all declarations that are missing the ledger_type field.
+    const declarationsSnapshot = await db.collection('declarations').where('ledger_type', '==', null).get();
+
+    if (declarationsSnapshot.empty) {
+      console.log('[MIGRATION] No declarations found with a null ledger_type. Migration not needed.');
+      return res.status(200).send('Migration complete: No declarations needed to be updated.');
+    }
+
+    console.log(`[MIGRATION] Found ${declarationsSnapshot.size} declarations with a null ledger_type.`);
+
+    // 3. Use a batch to update all found declarations.
+    const batch = db.batch();
+    let updatedCount = 0;
+    let missedCount = 0;
+    const missedDeclarations = [];
+
+    declarationsSnapshot.forEach(doc => {
+      const declaration = doc.data();
+      const customerId = declaration.customer_id;
+      const customerLedgerType = customerLedgerMap.get(customerId);
+
+      if (customerLedgerType) {
+        const declarationRef = db.collection('declarations').doc(doc.id);
+        batch.update(declarationRef, { ledger_type: customerLedgerType });
+        updatedCount++;
+      } else {
+        missedCount++;
+        missedDeclarations.push({ id: doc.id, customer_id: customerId });
+        console.warn(`[MIGRATION] Could not find ledger_type for customer_id: ${customerId} (Declaration ID: ${doc.id})`);
+      }
+    });
+
+    // 4. Commit the batch.
+    await batch.commit();
+
+    console.log(`[MIGRATION] Batch commit successful. Updated ${updatedCount} declarations.`);
+    
+    const report = `Migration complete.\n- Successfully updated ${updatedCount} declarations.\n- Could not update ${missedCount} declarations because their parent customer did not have a ledger_type or could not be found.\n${missedCount > 0 ? 'Missed declarations (check logs for more details): ' + JSON.stringify(missedDeclarations) : ''}`;
+
+    res.status(200).set('Content-Type', 'text/plain').send(report);
+
+  } catch (error) {
+    console.error('[MIGRATION] An error occurred during migration:', error);
+    res.status(500).send('Migration failed. Check server logs for details.');
+  }
+});
+
 app.get('/api/debug/cross-check-data', async (req, res) => {
   try {
     console.log('[DIAGNOSTIC-V2] Starting cross-check...');

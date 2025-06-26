@@ -281,7 +281,8 @@ function App() {
             type,
             month: MONTHS.indexOf(month) + 1,
             year: new Date().getFullYear(),
-            status: 'Bekliyor'
+            status: 'Bekliyor',
+            ledger_type: ledgerType // Pass ledger_type directly for robustness
           });
         }
       }
