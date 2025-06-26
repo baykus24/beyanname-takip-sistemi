@@ -133,48 +133,41 @@ function App() {
     }
   }, [hasMore]);
 
-  const fetchDeclarations = useCallback(async (loadMore = false) => {
-    console.log(`%c--- [CLIENT-LOG] fetchDeclarations CALLED (loadMore: ${loadMore}) ---`, 'color: blue; font-weight: bold;');
-
-    if (fetchingDeclarationsRef.current) {
-      console.log('%c[CLIENT-LOG] ABORT: Already fetching.', 'color: orange;');
-      return;
-    }
-    if (loadMore && !hasMoreDeclarationsRef.current) {
-      console.log('%c[CLIENT-LOG] ABORT: No more data to load.', 'color: orange;');
-      return;
-    }
+  const fetchDeclarations = async (loadMore = false) => {
+    // This function is no longer wrapped in useCallback, it will be recreated on each render,
+    // ensuring it always has access to the latest state (filters, etc.).
+    
+    if (fetchingDeclarationsRef.current) return;
+    if (loadMore && !hasMoreDeclarationsRef.current) return;
 
     fetchingDeclarationsRef.current = true;
     if (loadMore) {
       setIsFetchingMore(true);
     } else {
-      console.log('[CLIENT-LOG] New fetch/filter. Resetting declarations and cursor.');
       setIsLoading(true);
-      setDeclarations([]);
+      // When not loading more, it's a new fetch, so reset.
+      setDeclarations([]); 
       lastVisibleDeclarationRef.current = null;
       hasMoreDeclarationsRef.current = true;
     }
 
-    const currentFilters = filtersRef.current;
     const currentLastVisible = lastVisibleDeclarationRef.current;
-    console.log(`[CLIENT-LOG] Sending request with cursor: ${currentLastVisible}`);
 
     try {
-      const params = new URLSearchParams({ limit: 20, ...currentFilters });
+      // Use the 'filters' state directly, which is guaranteed to be up-to-date for this render.
+      const params = new URLSearchParams({ limit: 20, ...filters });
       if (currentLastVisible) {
         params.append('lastVisible', currentLastVisible);
       }
 
-      for (const [key, value] of Object.entries(currentFilters)) {
+      // Clean up empty filter parameters
+      for (const [key, value] of Object.entries(filters)) {
         if (!value) {
           params.delete(key);
         }
       }
 
       const requestUrl = `https://beyanname-takip-sistemi.onrender.com/api/declarations?${params.toString()}`;
-      console.log(`[CLIENT-LOG] Request URL: ${requestUrl}`);
-      
       const response = await axios.get(requestUrl, {
         headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', 'Expires': '0' },
       });
@@ -182,35 +175,25 @@ function App() {
       const responseData = response.data || {};
       const newDeclarations = Array.isArray(responseData.declarations) ? responseData.declarations : [];
       const newLastVisible = responseData.lastVisible;
-      console.log(`[CLIENT-LOG] Received ${newDeclarations.length} declarations. Received new cursor: ${newLastVisible}`);
-      console.log('[CLIENT-LOG] Received IDs:', newDeclarations.map(d => d.id));
 
-      if (loadMore) {
-        setDeclarations(prev => {
-          console.log('[CLIENT-LOG] PREV state IDs:', prev.map(d => d.id));
+      setDeclarations(prev => {
+        if (loadMore) {
           const existingIds = new Set(prev.map(d => d.id));
           const uniqueNewDeclarations = newDeclarations.filter(d => !existingIds.has(d.id));
-          if (uniqueNewDeclarations.length < newDeclarations.length) {
-             console.log(`%c[CLIENT-LOG] DUPLICATE DETECTED. Filtered out ${newDeclarations.length - uniqueNewDeclarations.length} items.`, 'color: red; font-weight: bold;');
-          }
-          const finalDeclarations = [...prev, ...uniqueNewDeclarations];
-          console.log('[CLIENT-LOG] NEW state IDs:', finalDeclarations.map(d => d.id));
-          return finalDeclarations;
-        });
-      } else {
-        setDeclarations(newDeclarations);
-      }
+          return [...prev, ...uniqueNewDeclarations];
+        } else {
+          return newDeclarations; // For new fetches, just replace the data.
+        }
+      });
 
       lastVisibleDeclarationRef.current = newLastVisible;
-      console.log(`[CLIENT-LOG] Set new cursor to: ${newLastVisible}`);
 
       const hasMore = newDeclarations.length >= 20;
       hasMoreDeclarationsRef.current = hasMore;
       setHasMoreDeclarations(hasMore);
-      console.log(`[CLIENT-LOG] Setting hasMore to: ${hasMore}`);
 
     } catch (error) {
-      console.error('[CLIENT-LOG] CRITICAL ERROR in fetchDeclarations:', error);
+      console.error('Fetch declarations failed:', error);
       toast.error('Beyannameler yüklenirken bir hata oluştu.');
     } finally {
       fetchingDeclarationsRef.current = false;
@@ -219,17 +202,20 @@ function App() {
       } else {
         setIsLoading(false);
       }
-      console.log('%c--- [CLIENT-LOG] fetchDeclarations END ---', 'color: blue; font-weight: bold;');
     }
-  }, []);
+  };
+
 
   useEffect(() => {
     fetchCustomers();
   }, [fetchCustomers]);
 
   useEffect(() => {
-    fetchDeclarations(false);
-  }, [filters, fetchDeclarations]);
+    // This useEffect now correctly re-triggers when 'filters' changes.
+    // 'fetchDeclarations' is not needed in the dependency array because it's stable
+    // across re-renders (as it's defined in the component body).
+    fetchDeclarations(false); 
+  }, [filters]);
 
   // Handlers
   const handleDeclarationChange = (type) => {
