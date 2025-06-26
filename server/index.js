@@ -256,44 +256,73 @@ app.get('/api/declarations', async (req, res) => {
 
 // Temporary Migration Endpoint to backfill 'ledger_type' in existing declarations.
 // This should be removed after the one-time migration is complete.
-app.get('/api/debug/diagnose-data', async (req, res) => {
+app.get('/api/debug/migrate-all-data', async (req, res) => {
   try {
-    console.log('[DIAGNOSTIC] Starting data diagnosis...');
+    console.log('[MIGRATION-V2] Starting ROBUST data migration...');
     
-    // Fetch the 50 most recent declarations to get a sample of the data.
-    const snapshot = await db.collection('declarations')
-                             .orderBy('created_at', 'desc')
-                             .limit(50)
-                             .get();
+    // 1. Get all customers and map their ID to their ledger_type.
+    const customersSnapshot = await db.collection('customers').get();
+    const customerLedgerMap = new Map();
+    customersSnapshot.forEach(doc => {
+      const customerData = doc.data();
+      if (customerData.ledger_type) {
+        customerLedgerMap.set(doc.id, customerData.ledger_type);
+      }
+    });
+    console.log(`[MIGRATION-V2] Found ${customerLedgerMap.size} customers with a ledger_type.`);
 
-    if (snapshot.empty) {
-      return res.status(200).send('Diagnostic complete: No declarations found.');
+    // 2. Process ALL declarations in batches.
+    const declarationsRef = db.collection('declarations');
+    let totalProcessed = 0;
+    let totalUpdated = 0;
+    let lastVisibleDoc = null;
+
+    while (true) {
+      let query = declarationsRef.orderBy('__name__').limit(200); // Process in chunks of 200
+      if (lastVisibleDoc) {
+        query = query.startAfter(lastVisibleDoc);
+      }
+      
+      const snapshot = await query.get();
+      if (snapshot.empty) {
+        break; // No more documents to process
+      }
+
+      let writeBatch = db.batch();
+      let operationsInBatch = 0;
+
+      snapshot.forEach(doc => {
+        const declarationData = doc.data();
+        // Check if ledger_type is missing or not a valid string
+        if (!declarationData.ledger_type || typeof declarationData.ledger_type !== 'string' || declarationData.ledger_type.length === 0) {
+          const customerId = declarationData.customer_id;
+          const correctLedgerType = customerLedgerMap.get(customerId);
+
+          if (correctLedgerType) {
+            writeBatch.update(doc.ref, { ledger_type: correctLedgerType });
+            operationsInBatch++;
+            totalUpdated++;
+          }
+        }
+      });
+
+      if (operationsInBatch > 0) {
+        console.log(`[MIGRATION-V2] Committing batch with ${operationsInBatch} updates...`);
+        await writeBatch.commit();
+      }
+      
+      totalProcessed += snapshot.size;
+      console.log(`[MIGRATION-V2] Processed ${totalProcessed} documents so far...`);
+      lastVisibleDoc = snapshot.docs[snapshot.docs.length - 1];
     }
 
-    // Use a Set to find all unique ledger_type values in the sample.
-    const foundLedgerTypes = new Set();
-    snapshot.forEach(doc => {
-      const data = doc.data();
-      // Add the ledger_type to the set. It handles undefined/null gracefully.
-      foundLedgerTypes.add(data.ledger_type);
-    });
-
-    const uniqueTypes = [...foundLedgerTypes];
-    const report = `Diagnostic Report:
-- Checked ${snapshot.size} recent declarations.
-- Found the following unique 'ledger_type' values: ${JSON.stringify(uniqueTypes)}
-
-Compare these values with the ones in your dropdown ('İşletme', 'Bilanço'). Check for case sensitivity, whitespace, or other differences.`;
-
-    console.log(`[DIAGNOSTIC] Report: Found unique ledger_type values: ${JSON.stringify(uniqueTypes)}`);
-    
-    // Send the report as plain text for easy reading.
-    res.set('Content-Type', 'text/plain');
-    res.status(200).send(report);
+    const message = `Robust migration complete. Processed ${totalProcessed} declarations and updated ${totalUpdated}.`;
+    console.log(`[MIGRATION-V2] ${message}`);
+    res.status(200).send(message);
 
   } catch (error) {
-    console.error('[DIAGNOSTIC] Data diagnosis failed:', error);
-    res.status(500).send('Data diagnosis failed. Check server logs for details.');
+    console.error('[MIGRATION-V2] Robust data migration failed:', error);
+    res.status(500).send('Data migration failed. Check server logs for details.');
   }
 });
 
