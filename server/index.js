@@ -135,55 +135,57 @@ app.post('/api/declarations', async (req, res) => {
 app.get('/api/declarations', async (req, res) => {
   try {
     const { limit = 20, lastVisible, month, year, type, status, ledger } = req.query;
+    console.log(`\n--- [SERVER-LOG] New Request ---`);
+    console.log(`[SERVER-LOG] Filters: month=${month}, year=${year}, type=${type}, status=${status}, ledger=${ledger}`);
+    
     let query = db.collection('declarations');
 
-    // Defter türüne göre filtreleme (customer koleksiyonundan ID'leri alarak)
     if (ledger) {
       const customersSnapshot = await db.collection('customers').where('ledger_type', '==', ledger).get();
       const customerIds = customersSnapshot.docs.map(doc => doc.id);
 
       if (customerIds.length === 0) {
-        // Eşleşen müşteri yoksa boş sonuç dön
+        console.log('[SERVER-LOG] No customers found for ledger type. Returning empty.');
         return res.json({ declarations: [], lastVisible: null });
       }
-      // Firestore 'in' sorgusu en fazla 30 değere izin verir. Büyük veri setleri için burayı daha sağlam hale getirmek gerekebilir.
       query = query.where('customer_id', 'in', customerIds);
     }
 
-    // Diğer filteleri uygula
     if (month) query = query.where('month', '==', parseInt(month, 10));
     if (year) query = query.where('year', '==', parseInt(year, 10));
     if (type) query = query.where('type', '==', type);
     if (status) query = query.where('status', '==', status);
 
-    // Sıralama ve Sayfalama Mantığı
-    // 1. Önce sıralama kurallarını belirle (en yeniden en eskiye).
-    //    Veri tekrarını önlemek için ikincil, garantili bir sıralama ekle (__name__).
     query = query.orderBy('created_at', 'desc').orderBy('__name__', 'desc');
 
-    // 2. Eğer ikinci veya sonraki bir sayfadaysak, başlangıç noktasını (cursor) belirle.
     if (lastVisible) {
+      console.log(`[SERVER-LOG] Received lastVisible cursor ID: ${lastVisible}`);
       const lastVisibleDoc = await db.collection('declarations').doc(lastVisible).get();
       if (lastVisibleDoc.exists) {
-        // Firebase'e belirsizlik yaratmayacak şekilde, sıralama alanlarını doğrudan vererek cursor'ı tanımla.
-        query = query.startAfter(lastVisibleDoc.data().created_at, lastVisibleDoc.id);
+        const cursorTimestamp = lastVisibleDoc.data().created_at;
+        const cursorId = lastVisibleDoc.id;
+        console.log(`[SERVER-LOG] Cursor doc found. Timestamp: ${cursorTimestamp.toDate().toISOString()}, ID: ${cursorId}`);
+        query = query.startAfter(cursorTimestamp, cursorId);
+      } else {
+        console.log(`[SERVER-LOG] WARNING: lastVisible document with id ${lastVisible} was NOT FOUND.`);
       }
+    } else {
+        console.log('[SERVER-LOG] No lastVisible cursor received. Fetching first page.');
     }
 
-    // 3. En son, sayfa başına gösterilecek eleman sayısını (limit) uygula.
     query = query.limit(Number(limit));
 
     const declarationsSnapshot = await query.get();
     if (declarationsSnapshot.empty) {
+      console.log('[SERVER-LOG] Query returned no documents.');
       return res.json({ declarations: [], lastVisible: null });
     }
 
-    // Müşteri verilerini toplu çekme
     const customerIds = [...new Set(declarationsSnapshot.docs.map(doc => doc.data().customer_id).filter(id => id))];
     let customersMap = new Map();
     if (customerIds.length > 0) {
       const customerPromises = [];
-      for (let i = 0; i < customerIds.length; i += 30) { // 'in' sorgusu 30 elemanla sınırlıdır
+      for (let i = 0; i < customerIds.length; i += 30) {
         const chunk = customerIds.slice(i, i + 30);
         customerPromises.push(
           db.collection('customers').where(admin.firestore.FieldPath.documentId(), 'in', chunk).get()
@@ -208,7 +210,11 @@ app.get('/api/declarations', async (req, res) => {
       };
     });
 
+    const returnedIds = declarations.map(d => d.id);
+    console.log(`[SERVER-LOG] Returning ${returnedIds.length} declarations. IDs: [${returnedIds.join(', ')}]`);
+
     const newLastVisible = declarationsSnapshot.docs.length > 0 ? declarationsSnapshot.docs[declarationsSnapshot.docs.length - 1].id : null;
+    console.log(`[SERVER-LOG] Sending new lastVisible cursor to client: ${newLastVisible}`);
 
     res.json({
       declarations,
@@ -216,7 +222,7 @@ app.get('/api/declarations', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Error fetching declarations:', error);
+    console.error('[SERVER-LOG] CRITICAL ERROR in /api/declarations:', error);
     res.status(500).json({ error: 'Failed to fetch declarations', details: error.message });
   }
 });

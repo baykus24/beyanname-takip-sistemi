@@ -134,22 +134,31 @@ function App() {
   }, [hasMore]);
 
   const fetchDeclarations = useCallback(async (loadMore = false) => {
-    if (fetchingDeclarationsRef.current) return;
-    if (loadMore && !hasMoreDeclarationsRef.current) return;
+    console.log(`%c--- [CLIENT-LOG] fetchDeclarations CALLED (loadMore: ${loadMore}) ---`, 'color: blue; font-weight: bold;');
+
+    if (fetchingDeclarationsRef.current) {
+      console.log('%c[CLIENT-LOG] ABORT: Already fetching.', 'color: orange;');
+      return;
+    }
+    if (loadMore && !hasMoreDeclarationsRef.current) {
+      console.log('%c[CLIENT-LOG] ABORT: No more data to load.', 'color: orange;');
+      return;
+    }
 
     fetchingDeclarationsRef.current = true;
     if (loadMore) {
       setIsFetchingMore(true);
     } else {
-      // Yeni bir filtre uygulandığında, eski verileri hemen temizle ve yükleme durumunu başlat.
+      console.log('[CLIENT-LOG] New fetch/filter. Resetting declarations and cursor.');
       setIsLoading(true);
-      setDeclarations([]); 
+      setDeclarations([]);
       lastVisibleDeclarationRef.current = null;
       hasMoreDeclarationsRef.current = true;
     }
 
     const currentFilters = filtersRef.current;
     const currentLastVisible = lastVisibleDeclarationRef.current;
+    console.log(`[CLIENT-LOG] Sending request with cursor: ${currentLastVisible}`);
 
     try {
       const params = new URLSearchParams({ limit: 20, ...currentFilters });
@@ -164,6 +173,8 @@ function App() {
       }
 
       const requestUrl = `https://beyanname-takip-sistemi.onrender.com/api/declarations?${params.toString()}`;
+      console.log(`[CLIENT-LOG] Request URL: ${requestUrl}`);
+      
       const response = await axios.get(requestUrl, {
         headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', 'Expires': '0' },
       });
@@ -171,26 +182,35 @@ function App() {
       const responseData = response.data || {};
       const newDeclarations = Array.isArray(responseData.declarations) ? responseData.declarations : [];
       const newLastVisible = responseData.lastVisible;
+      console.log(`[CLIENT-LOG] Received ${newDeclarations.length} declarations. Received new cursor: ${newLastVisible}`);
+      console.log('[CLIENT-LOG] Received IDs:', newDeclarations.map(d => d.id));
 
       if (loadMore) {
-        // Sunucudan gelen verilerde mevcut listede olanları filtreleyerek tekrarı önle.
         setDeclarations(prev => {
+          console.log('[CLIENT-LOG] PREV state IDs:', prev.map(d => d.id));
           const existingIds = new Set(prev.map(d => d.id));
           const uniqueNewDeclarations = newDeclarations.filter(d => !existingIds.has(d.id));
-          return [...prev, ...uniqueNewDeclarations];
+          if (uniqueNewDeclarations.length < newDeclarations.length) {
+             console.log(`%c[CLIENT-LOG] DUPLICATE DETECTED. Filtered out ${newDeclarations.length - uniqueNewDeclarations.length} items.`, 'color: red; font-weight: bold;');
+          }
+          const finalDeclarations = [...prev, ...uniqueNewDeclarations];
+          console.log('[CLIENT-LOG] NEW state IDs:', finalDeclarations.map(d => d.id));
+          return finalDeclarations;
         });
       } else {
         setDeclarations(newDeclarations);
       }
 
       lastVisibleDeclarationRef.current = newLastVisible;
+      console.log(`[CLIENT-LOG] Set new cursor to: ${newLastVisible}`);
 
       const hasMore = newDeclarations.length >= 20;
       hasMoreDeclarationsRef.current = hasMore;
       setHasMoreDeclarations(hasMore);
+      console.log(`[CLIENT-LOG] Setting hasMore to: ${hasMore}`);
 
     } catch (error) {
-      console.error('Fetch declarations failed:', error);
+      console.error('[CLIENT-LOG] CRITICAL ERROR in fetchDeclarations:', error);
       toast.error('Beyannameler yüklenirken bir hata oluştu.');
     } finally {
       fetchingDeclarationsRef.current = false;
@@ -199,6 +219,7 @@ function App() {
       } else {
         setIsLoading(false);
       }
+      console.log('%c--- [CLIENT-LOG] fetchDeclarations END ---', 'color: blue; font-weight: bold;');
     }
   }, []);
 
