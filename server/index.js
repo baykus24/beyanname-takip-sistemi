@@ -162,10 +162,18 @@ app.get('/api/declarations', async (req, res) => {
       console.log(`[SERVER-LOG] Received lastVisible cursor ID: ${lastVisible}`);
       const lastVisibleDoc = await db.collection('declarations').doc(lastVisible).get();
       if (lastVisibleDoc.exists) {
-        const cursorTimestamp = lastVisibleDoc.data().created_at;
-        const cursorId = lastVisibleDoc.id;
-        console.log(`[SERVER-LOG] Cursor doc found. Timestamp: ${cursorTimestamp.toDate().toISOString()}, ID: ${cursorId}`);
-        query = query.startAfter(cursorTimestamp, cursorId);
+        const docData = lastVisibleDoc.data();
+        // Defensively check if created_at exists and is a valid Timestamp
+        if (docData && docData.created_at && typeof docData.created_at.toDate === 'function') {
+            const cursorTimestamp = docData.created_at;
+            const cursorId = lastVisibleDoc.id;
+            console.log(`[SERVER-LOG] Cursor doc found. Timestamp: ${cursorTimestamp.toDate().toISOString()}, ID: ${cursorId}`);
+            query = query.startAfter(cursorTimestamp, cursorId);
+        } else {
+            // Log a warning if the cursor doc is invalid, and fetch from the beginning
+            // This prevents a server crash and still returns data to the user
+            console.log(`[SERVER-LOG] WARNING: lastVisible document with id ${lastVisible} has an invalid 'created_at' field. Ignoring cursor and fetching first page.`);
+        }
       } else {
         console.log(`[SERVER-LOG] WARNING: lastVisible document with id ${lastVisible} was NOT FOUND.`);
       }
