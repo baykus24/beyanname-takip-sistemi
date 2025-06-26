@@ -234,25 +234,13 @@ app.get('/api/declarations', async (req, res) => {
 
     // Firestore often includes a link to create the required index in the error details.
     // We will log this to make it easy to fix.
-    let indexCreationUrl = null;
-    const errorMessage = error.details || error.message || '';
-    
-    // Regex to find a URL in the error message, specifically for Firestore indexes
-    const urlRegex = /(https?:\/\/[^\s]*console\.firebase\.google\.com[^\s]*)/;
-    const match = errorMessage.match(urlRegex);
-    
-    if (match && match[0]) {
-      indexCreationUrl = match[0];
-      console.error(`[SERVER-LOG] Firestore Index Creation URL Found: ${indexCreationUrl}`);
-    } else if (error.details) {
-       console.error(`[SERVER-LOG] Firestore Index Creation Hint: ${error.details}`);
+    if (error.details) {
+      console.error(`[SERVER-LOG] Firestore Index Creation Hint: ${error.details}`);
     }
 
     res.status(500).json({ 
-      error: 'Failed to fetch declarations due to a server-side issue, possibly a missing database index.', 
-      details: errorMessage,
-      // Send the extracted URL to the client to make fixing it easy
-      indexCreationUrl: indexCreationUrl 
+      error: 'Failed to fetch declarations', 
+      details: error.details || error.message 
     });
   }
 });

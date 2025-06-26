@@ -188,21 +188,8 @@ function App() {
       setHasMoreDeclarations(hasMore);
 
     } catch (error) {
-      console.error('Fetch declarations failed:', error); // Keep the original log for context
-
-      // Check for the detailed response from the server
-      if (error.response && error.response.data) {
-        const { details, indexCreationUrl } = error.response.data;
-        console.error('Server Error Details:', details);
-        toast.error('Beyanname yüklenemedi. Detaylar için konsolu kontrol edin.');
-
-        if (indexCreationUrl) {
-          console.error(`Eksik Firestore dizinini oluşturmak için bu linke tıklayın: ${indexCreationUrl}`);
-          toast.warn('Eksik veritabanı dizini! Düzeltme linki konsola yazdırıldı.');
-        }
-      } else {
-        toast.error('Beyannameler yüklenirken bir ağ hatası oluştu.');
-      }
+      console.error('Fetch declarations failed:', error);
+      toast.error('Beyannameler yüklenirken bir hata oluştu.');
     } finally {
       fetchingDeclarationsRef.current = false;
       if (loadMore) {
