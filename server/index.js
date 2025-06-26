@@ -305,6 +305,49 @@ app.delete('/api/customers/:id', async (req, res) => {
   }
 });
 
+// --- DEBUG ENDPOINTS ---
+app.get('/api/debug/find-duplicates', async (req, res) => {
+  try {
+    console.log('[DEBUG] Starting duplicate detection...');
+    const allDeclarationsSnapshot = await db.collection('declarations').get();
+    
+    const declarations = allDeclarationsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    console.log(`[DEBUG] Fetched ${declarations.length} total declarations.`);
+
+    const groups = new Map();
+    declarations.forEach(decl => {
+      const key = `${decl.customer_id}|${decl.type}|${decl.month}|${decl.year}`;
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key).push(decl);
+    });
+
+    const duplicates = [];
+    groups.forEach((group, key) => {
+      if (group.length > 1) {
+        console.log(`[DEBUG] Found duplicate group for key: ${key}`);
+        duplicates.push({ key, records: group });
+      }
+    });
+
+    if (duplicates.length === 0) {
+      console.log('[DEBUG] No duplicates found.');
+      return res.status(200).json({ message: 'No duplicate declarations found.' });
+    }
+
+    console.log(`[DEBUG] Found ${duplicates.length} groups of duplicates.`);
+    res.status(200).json({ 
+      message: `Found ${duplicates.length} group(s) of duplicate declarations.`,
+      duplicates 
+    });
+
+  } catch (error) {
+    console.error('[DEBUG] Error finding duplicates:', error);
+    res.status(500).json({ error: 'Failed to run duplicate check.', details: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
