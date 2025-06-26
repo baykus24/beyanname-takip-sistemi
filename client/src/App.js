@@ -118,7 +118,7 @@ function App() {
         setCustomers(newCustomers);
       }
 
-      if (!newCustomers.length || newCustomers.length < 20) {
+      if (!newCustomers.length || newCustomers.length < 15) {
         setHasMore(false);
       }
     } catch (error) {
