@@ -348,6 +348,61 @@ app.get('/api/debug/find-duplicates', async (req, res) => {
   }
 });
 
+app.post('/api/debug/cleanup-duplicates', async (req, res) => {
+  try {
+    console.log('[CLEANUP] Starting duplicate cleanup...');
+    const allDeclarationsSnapshot = await db.collection('declarations').get();
+    
+    const declarations = allDeclarationsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    console.log(`[CLEANUP] Fetched ${declarations.length} total declarations.`);
+
+    const groups = new Map();
+    declarations.forEach(decl => {
+      const key = `${decl.customer_id}|${decl.type}|${decl.month}|${decl.year}`;
+      if (!groups.has(key)) {
+        groups.set(key, []);
+      }
+      groups.get(key).push(decl);
+    });
+
+    const duplicatesToDelete = [];
+    groups.forEach((group, key) => {
+      if (group.length > 1) {
+        // Keep the first one, mark the rest for deletion
+        const toDelete = group.slice(1);
+        duplicatesToDelete.push(...toDelete);
+      }
+    });
+
+    if (duplicatesToDelete.length === 0) {
+      console.log('[CLEANUP] No duplicates found to delete.');
+      return res.status(200).json({ message: 'No duplicate declarations found to delete.' });
+    }
+
+    console.log(`[CLEANUP] Found ${duplicatesToDelete.length} duplicate records to delete.`);
+
+    // Use a batch to delete all duplicates at once
+    const batch = db.batch();
+    duplicatesToDelete.forEach(doc => {
+      console.log(`[CLEANUP] Marking doc for deletion: ${doc.id}`);
+      const docRef = db.collection('declarations').doc(doc.id);
+      batch.delete(docRef);
+    });
+
+    await batch.commit();
+
+    console.log(`[CLEANUP] Successfully deleted ${duplicatesToDelete.length} duplicate records.`);
+    res.status(200).json({ 
+      message: `Cleanup successful. Deleted ${duplicatesToDelete.length} duplicate records.`,
+      deleted_count: duplicatesToDelete.length
+    });
+
+  } catch (error) {
+    console.error('[CLEANUP] Error cleaning up duplicates:', error);
+    res.status(500).json({ error: 'Failed to run cleanup task.', details: error.message });
+  }
+});
+
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
