@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { ToastContainer, toast } from 'react-toastify';
 import { Puff } from 'react-loader-spinner';
@@ -36,11 +36,13 @@ function App() {
   // Customer List State
   const [customers, setCustomers] = useState([]);
   const [customerSearch, setCustomerSearch] = useState('');
-  const [lastVisible, setLastVisible] = useState(null);
+    const [lastVisible, setLastVisible] = useState(null);
+  const lastVisibleRef = useRef(null);
   const [hasMore, setHasMore] = useState(true);
 
   // Declaration & Modal State
-  const [lastVisibleDeclaration, setLastVisibleDeclaration] = useState(null);
+    const [lastVisibleDeclaration, setLastVisibleDeclaration] = useState(null);
+  const lastVisibleDeclarationRef = useRef(null);
   const [hasMoreDeclarations, setHasMoreDeclarations] = useState(true);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editCustomer, setEditCustomer] = useState(null);
@@ -78,27 +80,31 @@ function App() {
   }, [declarationTypes]);
 
   // Data Fetching
-  const fetchCustomers = useCallback(async (loadMore = false) => {
-    if (!hasMore && loadMore) return;
-    if (!loadMore) setIsLoading(true);
+    const fetchCustomers = useCallback(async (loadMore = false) => {
+    if (loadMore && !hasMore) return;
+    
+    if (loadMore) {
+      setIsFetchingMore(true);
+    } else {
+      setIsLoading(true);
+      lastVisibleRef.current = null; // Reset for new fetch/filter
+    }
 
     try {
       let url = 'https://beyanname-takip-sistemi.onrender.com/api/customers';
-      if (loadMore && lastVisible) {
-        url += `?lastVisible=${lastVisible}`;
+      if (loadMore && lastVisibleRef.current) {
+        url += `?lastVisible=${lastVisibleRef.current}`;
       }
 
-            const response = await axios.get(url, {
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-        },
+      const response = await axios.get(url, {
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', 'Expires': '0' },
       });
+      
       const newCustomers = Array.isArray(response.data.customers) ? response.data.customers : [];
-      console.log('PRE-UPDATE: lastVisible was:', lastVisible);
-      setLastVisible(response.data.lastVisible);
-      console.log('POST-UPDATE: lastVisible is now:', response.data.lastVisible);
+      const newLastVisible = response.data.lastVisible;
+
+      lastVisibleRef.current = newLastVisible;
+      setLastVisible(newLastVisible);
 
       if (loadMore) {
         setCustomers(prev => [...(Array.isArray(prev) ? prev : []), ...newCustomers]);
@@ -106,128 +112,86 @@ function App() {
         setCustomers(newCustomers);
       }
 
-      setLastVisible(newCustomers.length > 0 ? newCustomers[newCustomers.length - 1].id : null);
       if (!newCustomers.length || newCustomers.length < 20) {
         setHasMore(false);
       }
     } catch (error) {
       console.error('Error fetching customers:', error);
-      // Sunucudan gelen detaylı hatayı logla
-      if (error.response && error.response.data && error.response.data.details) {
-        console.error('Server Error Details:', error.response.data.details);
-        toast.error(`Müşteri yüklenemedi: ${error.response.data.details}`);
-      } else {
-        toast.error('Müşteriler yüklenirken bir hata oluştu.');
-      }
-    } finally {
-      if (!loadMore) setIsLoading(false);
-    }
-  }, [hasMore, lastVisible]);
-
-  const fetchDeclarations = useCallback(async (loadMore = false, newFilters) => {
-    // Prevent duplicate fetches
-    if (loadMore && (isFetchingMore || !hasMoreDeclarations)) {
-      console.log('%cSKIPPING FETCH: Already fetching or no more data.', 'color: orange;');
-      return;
-    }
-
-    console.log(`%c--- FETCHING DECLARATIONS (loadMore: ${loadMore}) ---`, 'color: blue; font-weight: bold; font-size: 14px;');
-
-    if (loadMore) {
-      setIsFetchingMore(true);
-    } else {
-      setIsLoading(true);
-      // Reset pagination for new filters
-      setLastVisibleDeclaration(null);
-      console.log('LOG: New filter applied. Resetting lastVisibleDeclaration to null.');
-    }
-
-    // Use a temporary variable for lastVisible to avoid state timing issues in the log
-    const currentLastVisible = loadMore ? lastVisibleDeclaration : null;
-    console.log('LOG: Using lastVisible for this fetch:', currentLastVisible);
-
-    try {
-      const params = new URLSearchParams({ limit: 20, ...newFilters });
-      if (currentLastVisible) {
-        params.append('lastVisible', currentLastVisible);
-      }
-
-      // Clean up empty filter values from URL
-      for (const [key, value] of Object.entries(newFilters)) {
-        if (!value) {
-          params.delete(key);
-        }
-      }
-
-      const requestUrl = `https://beyanname-takip-sistemi.onrender.com/api/declarations?${params.toString()}`;
-      console.log('LOG: Requesting URL ->', requestUrl);
-
-      const response = await axios.get(requestUrl, {
-        headers: {
-          'Cache-Control': 'no-cache',
-          'Pragma': 'no-cache',
-          'Expires': '0',
-        },
-      });
-
-      console.log('%cLOG: API Response Received:', 'color: green; font-weight: bold;', response.data);
-
-      const responseData = response.data || {};
-      const newDeclarations = Array.isArray(responseData.declarations) ? responseData.declarations : [];
-      const newLastVisible = responseData.lastVisible;
-
-      console.log(`LOG: Received ${newDeclarations.length} new declarations.`);
-      console.log('LOG: Received new lastVisible from server:', newLastVisible);
-
-      if (loadMore) {
-        setDeclarations(prev => {
-          console.log('LOG: State before "load more" update:', prev.map(d => d.id));
-          const updatedDeclarations = [...prev, ...newDeclarations];
-          console.log('LOG: State after "load more" update:', updatedDeclarations.map(d => d.id));
-          return updatedDeclarations;
-        });
-      } else {
-        console.log('LOG: Setting new declarations (not loading more).');
-        setDeclarations(newDeclarations);
-      }
-
-      setLastVisibleDeclaration(newLastVisible);
-      console.log('LOG: Updated lastVisibleDeclaration state to:', newLastVisible);
-
-      setHasMoreDeclarations(newDeclarations.length > 0 && newDeclarations.length >= 20);
-      console.log(`LOG: Setting hasMoreDeclarations to: ${newDeclarations.length > 0 && newDeclarations.length >= 20}`);
-
-    } catch (error) {
-      console.error('%c--- FETCH DECLARATIONS FAILED ---', 'color: red; font-weight: bold; font-size: 14px;', error);
-      if (error.response && error.response.data && error.response.data.details) {
-        console.error('Server Error Details:', error.response.data.details);
-        toast.error(`Beyanname yüklenemedi: ${error.response.data.details}`);
-      } else {
-        toast.error('Beyannameler yüklenirken bir hata oluştu.');
-      }
+      toast.error('Müşteriler yüklenirken bir hata oluştu.');
     } finally {
       if (loadMore) {
         setIsFetchingMore(false);
       } else {
         setIsLoading(false);
       }
-      console.log('%c--- FETCH COMPLETE ---', 'color: blue; font-weight: bold; font-size: 14px;');
     }
-  }, [isFetchingMore, hasMoreDeclarations, lastVisibleDeclaration]);
+  }, [hasMore]);
+
+  const fetchDeclarations = useCallback(async (loadMore = false, currentFilters) => {
+    if (loadMore && (isFetchingMore || !hasMoreDeclarations)) {
+      return;
+    }
+
+    if (loadMore) {
+      setIsFetchingMore(true);
+    } else {
+      setIsLoading(true);
+      lastVisibleDeclarationRef.current = null;
+    }
+
+    const currentLastVisible = lastVisibleDeclarationRef.current;
+
+    try {
+      const params = new URLSearchParams({ limit: 20, ...currentFilters });
+      if (currentLastVisible) {
+        params.append('lastVisible', currentLastVisible);
+      }
+
+      for (const [key, value] of Object.entries(currentFilters)) {
+        if (!value) {
+          params.delete(key);
+        }
+      }
+
+      const requestUrl = `https://beyanname-takip-sistemi.onrender.com/api/declarations?${params.toString()}`;
+      const response = await axios.get(requestUrl, {
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', 'Expires': '0' },
+      });
+
+      const responseData = response.data || {};
+      const newDeclarations = Array.isArray(responseData.declarations) ? responseData.declarations : [];
+      const newLastVisible = responseData.lastVisible;
+
+      if (loadMore) {
+        setDeclarations(prev => [...prev, ...newDeclarations]);
+      } else {
+        setDeclarations(newDeclarations);
+      }
+
+      lastVisibleDeclarationRef.current = newLastVisible;
+      setLastVisibleDeclaration(newLastVisible);
+
+      setHasMoreDeclarations(newDeclarations.length > 0 && newDeclarations.length >= 20);
+
+    } catch (error) {
+      console.error('Fetch declarations failed:', error);
+      toast.error('Beyannameler yüklenirken bir hata oluştu.');
+    } finally {
+      if (loadMore) {
+        setIsFetchingMore(false);
+      } else {
+        setIsLoading(false);
+      }
+    }
+  }, [isFetchingMore, hasMoreDeclarations]);
 
   useEffect(() => {
     fetchCustomers();
   }, [fetchCustomers]);
 
   useEffect(() => {
-    // Bu effect'in YALNIZCA 'filters' state'i değiştiğinde çalışmasını istiyoruz.
-    // 'fetchDeclarations' fonksiyonunu bağımlılıklardan kaldırmak, 'lastVisibleDeclaration'
-    // güncellendiğinde oluşan sonsuz döngüyü kırar. Bu, React'in standart
-    // 'exhaustive-deps' kuralını bilinçli olarak ihlal etmektir, çünkü döngüyü
-    // kırmanın en temiz yolu budur.
     fetchDeclarations(false, filters);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters]);
+  }, [filters, fetchDeclarations]);
 
   // Handlers
   const handleDeclarationChange = (type) => {
