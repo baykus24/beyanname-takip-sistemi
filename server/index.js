@@ -108,21 +108,31 @@ app.post('/api/declarations', async (req, res) => {
     if (!customer_id || !type || !month || !year) {
       return res.status(400).json({ error: 'Missing required fields: customer_id, type, month, year' });
     }
-    // İsteğe bağlı: customer_id'nin geçerli bir müşteri olup olmadığını kontrol et
-    // const customerDoc = await db.collection('customers').doc(customer_id).get();
-    // if (!customerDoc.exists) {
-    //   return res.status(404).json({ error: 'Customer not found' });
-    // }
+
+    // Fetch the customer to get their ledger_type for data denormalization
+    const customerDoc = await db.collection('customers').doc(customer_id).get();
+    if (!customerDoc.exists) {
+      return res.status(404).json({ error: 'Customer not found' });
+    }
+    const customerData = customerDoc.data();
+    const ledger_type = customerData.ledger_type;
+
+    // Enforce data integrity. Every customer must have a ledger_type.
+    if (!ledger_type) {
+      console.error(`[SERVER-ERROR] Critical data integrity issue: Customer with ID ${customer_id} is missing a ledger_type.`);
+      return res.status(500).json({ error: `Customer data is incomplete and missing a ledger_type.` });
+    }
 
     const declarationRef = await db.collection('declarations').add({
-      customer_id, // Bu, 'customers' koleksiyonundaki bir dokümanın ID'si olmalı
+      customer_id,
       type,
       month: parseInt(month, 10),
       year: parseInt(year, 10),
-      status: 'Bekliyor', // Varsayılan durum
-      created_at: admin.firestore.FieldValue.serverTimestamp(), // Oluşturulma zamanı
+      status: 'Bekliyor', // Default status
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
       completed_at: null,
-      note: ''
+      note: '',
+      ledger_type: ledger_type // Add the ledger_type for efficient filtering
     });
     res.status(201).json({ id: declarationRef.id });
   } catch (error) {
@@ -205,12 +215,13 @@ app.get('/api/declarations', async (req, res) => {
 
     const declarations = declarationsSnapshot.docs.map(doc => {
       const declarationData = doc.data();
-      const customerData = customersMap.get(declarationData.customer_id) || { name: 'Bilinmeyen Müşteri', ledger_type: 'N/A' };
+      // The customer's name is fetched for display purposes.
+      // The declaration's own ledger_type is trusted as the source of truth.
+      const customerData = customersMap.get(declarationData.customer_id) || { name: 'Bilinmeyen Müşteri' };
       return {
         id: doc.id,
-        ...declarationData,
+        ...declarationData, // This correctly includes the ledger_type from the declaration itself
         customer_name: customerData.name,
-        ledger_type: customerData.ledger_type
       };
     });
 
