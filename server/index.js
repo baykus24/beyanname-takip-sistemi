@@ -223,7 +223,18 @@ app.get('/api/declarations', async (req, res) => {
 
   } catch (error) {
     console.error('[SERVER-LOG] CRITICAL ERROR in /api/declarations:', error);
-    res.status(500).json({ error: 'Failed to fetch declarations', details: error.message });
+
+    // Firestore often includes a link to create the required index in the error details.
+    // We will log this to make it easy to fix.
+    if (error.details) {
+      console.error(`[SERVER-LOG] Firestore Index Creation Hint: ${error.details}`);
+    }
+
+    res.status(500).json({ 
+      error: 'Failed to fetch declarations', 
+      // Send the detailed message which might contain the index creation URL
+      details: error.details || error.message 
+    });
   }
 });
 
