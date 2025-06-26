@@ -163,9 +163,13 @@ app.get('/api/declarations', async (req, res) => {
 
     // 2. Eğer ikinci veya sonraki bir sayfadaysak, başlangıç noktasını (cursor) belirle.
     if (lastVisible) {
+      console.log(`[SERVER LOG] Received lastVisible ID: ${lastVisible}`);
       const lastVisibleDoc = await db.collection('declarations').doc(lastVisible).get();
       if (lastVisibleDoc.exists) {
+        console.log(`[SERVER LOG] Found cursor document with ID: ${lastVisibleDoc.id}`);
         query = query.startAfter(lastVisibleDoc);
+      } else {
+        console.log(`[SERVER LOG] WARNING: Cursor document with ID ${lastVisible} not found!`);
       }
     }
 
@@ -173,6 +177,7 @@ app.get('/api/declarations', async (req, res) => {
     query = query.limit(Number(limit));
 
     const declarationsSnapshot = await query.get();
+    console.log(`[SERVER LOG] Query returned ${declarationsSnapshot.docs.length} documents.`);
     if (declarationsSnapshot.empty) {
       return res.json({ declarations: [], lastVisible: null });
     }
