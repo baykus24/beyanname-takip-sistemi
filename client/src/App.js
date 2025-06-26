@@ -29,6 +29,7 @@ function App() {
   const [taxNo, setTaxNo] = useState('');
   const [ledgerType, setLedgerType] = useState('İşletme');
   const [selectedDeclarations, setSelectedDeclarations] = useState({});
+  const [declarationMonths, setDeclarationMonths] = useState({});
   const [declarations, setDeclarations] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
@@ -215,13 +216,21 @@ function App() {
   // Handlers
   const handleDeclarationChange = (type) => {
     setSelectedDeclarations(prev => {
-      const newDeclarations = { ...prev };
-      if (newDeclarations[type]) {
-        delete newDeclarations[type];
+      const newSelected = { ...prev };
+      if (newSelected[type]) {
+        // If it's being unchecked, delete it
+        delete newSelected[type];
+        // Also clear its months from the other state
+        setDeclarationMonths(prevMonths => {
+          const newMonths = { ...prevMonths };
+          delete newMonths[type];
+          return newMonths;
+        });
       } else {
-        newDeclarations[type] = []; // Initialize with empty months array
+        // If it's being checked, initialize it. The value is just a placeholder.
+        newSelected[type] = []; 
       }
-      return newDeclarations;
+      return newSelected;
     });
   };
 
@@ -246,24 +255,35 @@ function App() {
     const val = customDeclInput.trim();
     if (val && !declarationTypes.includes(val)) {
       setDeclarationTypes(prev => [...prev, val]);
-      setSelectedDeclarations(prev => [...prev, val]);
+      // Automatically select the new type
+      setSelectedDeclarations(prev => ({...prev, [val]: []}));
       setCustomDeclInput('');
     }
   };
 
   const handleDeclRemove = (type) => {
+    // Remove from the master list of types
     setDeclarationTypes(prev => prev.filter(t => t !== type));
-    setSelectedDeclarations(prev => prev.filter(t => t !== type));
+    
+    // Remove it from the selected declarations
+    setSelectedDeclarations(prev => {
+      const newSelected = { ...prev };
+      delete newSelected[type];
+      return newSelected;
+    });
+
+    // Also remove its months
     setDeclarationMonths(prev => {
-      const copy = { ...prev };
-      delete copy[type];
-      return copy;
+      const newMonths = { ...prev };
+      delete newMonths[type];
+      return newMonths;
     });
   };
 
     const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!name || !taxNo || selectedDeclarations.length === 0) {
+    // Corrected validation
+    if (!name || !taxNo || Object.keys(selectedDeclarations).length === 0) {
       toast.error('Tüm alanları doldurun ve en az bir beyanname seçin.');
       return;
     }
@@ -273,22 +293,28 @@ function App() {
         name, tax_no: taxNo, ledger_type: ledgerType
       });
       const customerId = res.data.id;
-      for (const type of selectedDeclarations) {
+      // Corrected loop
+      for (const type of Object.keys(selectedDeclarations)) {
         const months = declarationMonths[type] || [];
-        for (const month of months) {
-          await axios.post('https://beyanname-takip-sistemi.onrender.com/api/declarations', {
-            customer_id: customerId,
-            type,
-            month: MONTHS.indexOf(month) + 1,
-            year: new Date().getFullYear(),
-            status: 'Bekliyor',
-            ledger_type: ledgerType // Pass ledger_type directly for robustness
-          });
+        // Only create declarations if months have been selected
+        if (months.length > 0) {
+            for (const month of months) {
+                await axios.post('https://beyanname-takip-sistemi.onrender.com/api/declarations', {
+                    customer_id: customerId,
+                    type,
+                    month: MONTHS.indexOf(month) + 1,
+                    year: new Date().getFullYear(),
+                    status: 'Bekliyor',
+                    ledger_type: ledgerType
+                });
+            }
         }
       }
       toast.success('Kayıt başarılı!');
       setName(''); setTaxNo(''); setLedgerType('İşletme');
-      setSelectedDeclarations([]); setDeclarationMonths({});
+      // Corrected state reset
+      setSelectedDeclarations({}); 
+      setDeclarationMonths({});
       fetchCustomers(); // Refresh customer list
       fetchDeclarations(false);
     } catch (err) {
@@ -479,7 +505,7 @@ function App() {
               {declarationTypes.map(type => (
                 <span key={type} style={{ display: 'inline-flex', alignItems: 'center', marginRight: 10, marginBottom: 6 }}>
                   <label style={{ marginRight: 4 }}>
-                    <input type="checkbox" checked={selectedDeclarations[type]?.length > 0} onChange={() => handleDeclarationChange(type)} /> {type}
+                    <input type="checkbox" checked={selectedDeclarations[type] !== undefined} onChange={() => handleDeclarationChange(type)} /> {type}
                   </label>
                   <button type="button" onClick={() => handleDeclRemove(type)} style={{ marginLeft: 2, background: '#dc3545', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: 12 }}>Sil</button>
                 </span>
