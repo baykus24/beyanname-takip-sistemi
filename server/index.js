@@ -159,8 +159,7 @@ app.get('/api/declarations', async (req, res) => {
     // Sıralama ve Sayfalama Mantığı
     // 1. Önce sıralama kurallarını belirle (en yeniden en eskiye).
     //    Veri tekrarını önlemek için ikincil, garantili bir sıralama ekle (__name__).
-    // GEÇİCİ TEŞHİS: Sorunun ikincil sıralamadan kaynaklanıp kaynaklanmadığını test etmek için sıralama basitleştirildi.
-    query = query.orderBy('created_at', 'desc');
+    query = query.orderBy('created_at', 'desc').orderBy('__name__', 'desc');
 
     // 2. Eğer ikinci veya sonraki bir sayfadaysak, başlangıç noktasını (cursor) belirle.
     if (lastVisible) {
