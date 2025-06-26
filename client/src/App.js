@@ -134,9 +134,6 @@ function App() {
   }, [hasMore]);
 
   const fetchDeclarations = async (loadMore = false) => {
-    // This function is no longer wrapped in useCallback, it will be recreated on each render,
-    // ensuring it always has access to the latest state (filters, etc.).
-    
     if (fetchingDeclarationsRef.current) return;
     if (loadMore && !hasMoreDeclarationsRef.current) return;
 
@@ -145,19 +142,16 @@ function App() {
       setIsFetchingMore(true);
     } else {
       setIsLoading(true);
-      // When not loading more, it's a new fetch, so reset.
-      setDeclarations([]); 
+      // For a new fetch/filter, we reset the cursor, but NOT the data.
+      // The data will be replaced atomically in setDeclarations.
       lastVisibleDeclarationRef.current = null;
       hasMoreDeclarationsRef.current = true;
     }
 
-    const currentLastVisible = lastVisibleDeclarationRef.current;
-
     try {
-      // Use the 'filters' state directly, which is guaranteed to be up-to-date for this render.
       const params = new URLSearchParams({ limit: 20, ...filters });
-      if (currentLastVisible) {
-        params.append('lastVisible', currentLastVisible);
+      if (loadMore && lastVisibleDeclarationRef.current) {
+        params.append('lastVisible', lastVisibleDeclarationRef.current);
       }
 
       // Clean up empty filter parameters
@@ -177,13 +171,14 @@ function App() {
       const newLastVisible = responseData.lastVisible;
 
       setDeclarations(prev => {
-        if (loadMore) {
-          const existingIds = new Set(prev.map(d => d.id));
-          const uniqueNewDeclarations = newDeclarations.filter(d => !existingIds.has(d.id));
-          return [...prev, ...uniqueNewDeclarations];
-        } else {
-          return newDeclarations; // For new fetches, just replace the data.
+        // If it's a new fetch (not 'loadMore'), completely replace the data.
+        if (!loadMore) {
+          return newDeclarations;
         }
+        // If it is a 'loadMore', append only new, unique items.
+        const existingIds = new Set(prev.map(d => d.id));
+        const uniqueNewDeclarations = newDeclarations.filter(d => !existingIds.has(d.id));
+        return [...prev, ...uniqueNewDeclarations];
       });
 
       lastVisibleDeclarationRef.current = newLastVisible;
