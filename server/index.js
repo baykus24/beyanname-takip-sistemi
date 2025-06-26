@@ -256,73 +256,44 @@ app.get('/api/declarations', async (req, res) => {
 
 // Temporary Migration Endpoint to backfill 'ledger_type' in existing declarations.
 // This should be removed after the one-time migration is complete.
-app.get('/api/debug/migrate-data', async (req, res) => {
+app.get('/api/debug/diagnose-data', async (req, res) => {
   try {
-    console.log('[MIGRATION] Starting data migration to add ledger_type to declarations...');
+    console.log('[DIAGNOSTIC] Starting data diagnosis...');
     
-    // 1. Get all customers and map their ID to their ledger_type.
-    const customersSnapshot = await db.collection('customers').get();
-    const customerLedgerMap = new Map();
-    customersSnapshot.forEach(doc => {
-      const customerData = doc.data();
-      if (customerData.ledger_type) {
-        customerLedgerMap.set(doc.id, customerData.ledger_type);
-      }
-    });
-    console.log(`[MIGRATION] Found ${customerLedgerMap.size} customers with a ledger_type.`);
+    // Fetch the 50 most recent declarations to get a sample of the data.
+    const snapshot = await db.collection('declarations')
+                             .orderBy('created_at', 'desc')
+                             .limit(50)
+                             .get();
 
-    // 2. Get all declarations that are missing the 'ledger_type' field.
-    const declarationsSnapshot = await db.collection('declarations').where('ledger_type', '==', null).get();
-    console.log(`[MIGRATION] Found ${declarationsSnapshot.size} declarations to process.`);
-
-    if (declarationsSnapshot.empty) {
-      return res.status(200).send('Migration not needed. All declarations already have a ledger_type.');
+    if (snapshot.empty) {
+      return res.status(200).send('Diagnostic complete: No declarations found.');
     }
 
-    // 3. Create batches to update declarations.
-    const promises = [];
-    let batch = db.batch();
-    let operationCount = 0;
-    let totalUpdatedCount = 0;
-
-    declarationsSnapshot.forEach((doc, index) => {
-      const declaration = doc.data();
-      const customerId = declaration.customer_id;
-      const ledgerType = customerLedgerMap.get(customerId);
-
-      // Update only if we found a corresponding ledger_type for the customer.
-      if (ledgerType) {
-        const docRef = db.collection('declarations').doc(doc.id);
-        batch.update(docRef, { ledger_type: ledgerType });
-        operationCount++;
-        totalUpdatedCount++;
-      }
-      
-      // Commit the batch when it's full (Firestore limit is 500) or on the last item.
-      if (operationCount > 0 && (operationCount % 499 === 0 || index === declarationsSnapshot.size - 1)) {
-        console.log(`[MIGRATION] Committing batch with ${operationCount} operations.`);
-        promises.push(batch.commit());
-        // Reset batch and counter for the next set of operations.
-        batch = db.batch();
-        operationCount = 0;
-      }
+    // Use a Set to find all unique ledger_type values in the sample.
+    const foundLedgerTypes = new Set();
+    snapshot.forEach(doc => {
+      const data = doc.data();
+      // Add the ledger_type to the set. It handles undefined/null gracefully.
+      foundLedgerTypes.add(data.ledger_type);
     });
 
-    await Promise.all(promises);
+    const uniqueTypes = [...foundLedgerTypes];
+    const report = `Diagnostic Report:
+- Checked ${snapshot.size} recent declarations.
+- Found the following unique 'ledger_type' values: ${JSON.stringify(uniqueTypes)}
 
-    if (totalUpdatedCount > 0) {
-      const message = `Migration successful. Updated ${totalUpdatedCount} declarations.`;
-      console.log(`[MIGRATION] ${message}`);
-      res.status(200).send(message);
-    } else {
-      const message = 'Migration complete, but no declarations needed an update.';
-      console.log(`[MIGRATION] ${message}`);
-      res.status(200).send(message);
-    }
+Compare these values with the ones in your dropdown ('İşletme', 'Bilanço'). Check for case sensitivity, whitespace, or other differences.`;
+
+    console.log(`[DIAGNOSTIC] Report: Found unique ledger_type values: ${JSON.stringify(uniqueTypes)}`);
+    
+    // Send the report as plain text for easy reading.
+    res.set('Content-Type', 'text/plain');
+    res.status(200).send(report);
 
   } catch (error) {
-    console.error('[MIGRATION] Data migration failed:', error);
-    res.status(500).send('Data migration failed. Check server logs for details.');
+    console.error('[DIAGNOSTIC] Data diagnosis failed:', error);
+    res.status(500).send('Data diagnosis failed. Check server logs for details.');
   }
 });
 
