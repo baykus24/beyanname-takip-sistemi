@@ -256,73 +256,65 @@ app.get('/api/declarations', async (req, res) => {
 
 // Temporary Migration Endpoint to backfill 'ledger_type' in existing declarations.
 // This should be removed after the one-time migration is complete.
-app.get('/api/debug/migrate-all-data', async (req, res) => {
+app.get('/api/debug/cross-check-data', async (req, res) => {
   try {
-    console.log('[MIGRATION-V2] Starting ROBUST data migration...');
-    
+    console.log('[DIAGNOSTIC-V2] Starting cross-check...');
+
     // 1. Get all customers and map their ID to their ledger_type.
     const customersSnapshot = await db.collection('customers').get();
     const customerLedgerMap = new Map();
     customersSnapshot.forEach(doc => {
-      const customerData = doc.data();
-      if (customerData.ledger_type) {
-        customerLedgerMap.set(doc.id, customerData.ledger_type);
-      }
+      customerLedgerMap.set(doc.id, doc.data().ledger_type); // Store ledger_type, even if null/undefined
     });
-    console.log(`[MIGRATION-V2] Found ${customerLedgerMap.size} customers with a ledger_type.`);
+    console.log(`[DIAGNOSTIC-V2] Indexed ${customerLedgerMap.size} customers.`);
 
-    // 2. Process ALL declarations in batches.
-    const declarationsRef = db.collection('declarations');
-    let totalProcessed = 0;
-    let totalUpdated = 0;
-    let lastVisibleDoc = null;
+    // 2. Find recent declarations with null ledger_type
+    const declarationsSnapshot = await db.collection('declarations')
+                                         .where('ledger_type', '==', null)
+                                         .orderBy('created_at', 'desc')
+                                         .limit(20) // Check the last 20 problematic ones
+                                         .get();
 
-    while (true) {
-      let query = declarationsRef.orderBy('__name__').limit(200); // Process in chunks of 200
-      if (lastVisibleDoc) {
-        query = query.startAfter(lastVisibleDoc);
-      }
-      
-      const snapshot = await query.get();
-      if (snapshot.empty) {
-        break; // No more documents to process
-      }
-
-      let writeBatch = db.batch();
-      let operationsInBatch = 0;
-
-      snapshot.forEach(doc => {
-        const declarationData = doc.data();
-        // Check if ledger_type is missing or not a valid string
-        if (!declarationData.ledger_type || typeof declarationData.ledger_type !== 'string' || declarationData.ledger_type.length === 0) {
-          const customerId = declarationData.customer_id;
-          const correctLedgerType = customerLedgerMap.get(customerId);
-
-          if (correctLedgerType) {
-            writeBatch.update(doc.ref, { ledger_type: correctLedgerType });
-            operationsInBatch++;
-            totalUpdated++;
-          }
-        }
-      });
-
-      if (operationsInBatch > 0) {
-        console.log(`[MIGRATION-V2] Committing batch with ${operationsInBatch} updates...`);
-        await writeBatch.commit();
-      }
-      
-      totalProcessed += snapshot.size;
-      console.log(`[MIGRATION-V2] Processed ${totalProcessed} documents so far...`);
-      lastVisibleDoc = snapshot.docs[snapshot.docs.length - 1];
+    if (declarationsSnapshot.empty) {
+      return res.status(200).set('Content-Type', 'text/plain').send('Cross-check complete: No declarations with null ledger_type found.');
     }
 
-    const message = `Robust migration complete. Processed ${totalProcessed} declarations and updated ${totalUpdated}.`;
-    console.log(`[MIGRATION-V2] ${message}`);
-    res.status(200).send(message);
+    const reportLines = [
+      `Cross-Check Report: Found ${declarationsSnapshot.size} recent declarations with a null ledger_type.`,
+      '--------------------------------------------------',
+      'Analyzing the associated customers...'
+    ];
+    
+    let problematicCustomers = 0;
+
+    declarationsSnapshot.forEach(doc => {
+      const decl = doc.data();
+      const customerId = decl.customer_id;
+      const customerLedgerType = customerLedgerMap.get(customerId);
+
+      if (customerLedgerType) {
+        reportLines.push(`- Declaration ID ${doc.id}: OK. Customer ${customerId} has ledger_type '${customerLedgerType}'. (This declaration should have been fixed).`);
+      } else {
+        problematicCustomers++;
+        reportLines.push(`- Declaration ID ${doc.id}: PROBLEM! Customer ${customerId} has a missing or null ledger_type.`);
+      }
+    });
+    
+    reportLines.push('--------------------------------------------------');
+    if (problematicCustomers > 0) {
+      reportLines.push(`Conclusion: Found ${problematicCustomers} declarations whose customers are missing the 'ledger_type'. The migration script cannot fix these until the customer records are updated.`);
+      reportLines.push('The root cause is that new customers are being created without a ledger_type. This must be fixed in the customer creation form.');
+    } else {
+      reportLines.push('Conclusion: All associated customers have a ledger_type. The migration script should have worked. This is an unexpected state.');
+    }
+
+    const report = reportLines.join('\n');
+    console.log('[DIAGNOSTIC-V2] Report generated.');
+    res.set('Content-Type', 'text/plain').status(200).send(report);
 
   } catch (error) {
-    console.error('[MIGRATION-V2] Robust data migration failed:', error);
-    res.status(500).send('Data migration failed. Check server logs for details.');
+    console.error('[DIAGNOSTIC-V2] Cross-check failed:', error);
+    res.status(500).send('Cross-check failed. Check server logs for details.');
   }
 });
 
