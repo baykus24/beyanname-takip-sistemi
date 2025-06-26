@@ -141,14 +141,10 @@ app.get('/api/declarations', async (req, res) => {
     let query = db.collection('declarations');
 
     if (ledger) {
-      const customersSnapshot = await db.collection('customers').where('ledger_type', '==', ledger).get();
-      const customerIds = customersSnapshot.docs.map(doc => doc.id);
-
-      if (customerIds.length === 0) {
-        console.log('[SERVER-LOG] No customers found for ledger type. Returning empty.');
-        return res.json({ declarations: [], lastVisible: null });
-      }
-      query = query.where('customer_id', 'in', customerIds);
+      // New logic: Directly query by the denormalized 'ledger_type' field.
+      // This avoids the 30-item limit of 'in' queries and is more performant.
+      // This requires a one-time data migration to add 'ledger_type' to all declarations.
+      query = query.where('ledger_type', '==', ledger);
     }
 
     if (month) query = query.where('month', '==', parseInt(month, 10));
@@ -257,6 +253,78 @@ app.get('/api/declarations', async (req, res) => {
   }
 });
 
+// Temporary Migration Endpoint to backfill 'ledger_type' in existing declarations.
+// This should be removed after the one-time migration is complete.
+app.get('/api/debug/migrate-data', async (req, res) => {
+  try {
+    console.log('[MIGRATION] Starting data migration to add ledger_type to declarations...');
+    
+    // 1. Get all customers and map their ID to their ledger_type.
+    const customersSnapshot = await db.collection('customers').get();
+    const customerLedgerMap = new Map();
+    customersSnapshot.forEach(doc => {
+      const customerData = doc.data();
+      if (customerData.ledger_type) {
+        customerLedgerMap.set(doc.id, customerData.ledger_type);
+      }
+    });
+    console.log(`[MIGRATION] Found ${customerLedgerMap.size} customers with a ledger_type.`);
+
+    // 2. Get all declarations that are missing the 'ledger_type' field.
+    const declarationsSnapshot = await db.collection('declarations').where('ledger_type', '==', null).get();
+    console.log(`[MIGRATION] Found ${declarationsSnapshot.size} declarations to process.`);
+
+    if (declarationsSnapshot.empty) {
+      return res.status(200).send('Migration not needed. All declarations already have a ledger_type.');
+    }
+
+    // 3. Create batches to update declarations.
+    const promises = [];
+    let batch = db.batch();
+    let operationCount = 0;
+    let totalUpdatedCount = 0;
+
+    declarationsSnapshot.forEach((doc, index) => {
+      const declaration = doc.data();
+      const customerId = declaration.customer_id;
+      const ledgerType = customerLedgerMap.get(customerId);
+
+      // Update only if we found a corresponding ledger_type for the customer.
+      if (ledgerType) {
+        const docRef = db.collection('declarations').doc(doc.id);
+        batch.update(docRef, { ledger_type: ledgerType });
+        operationCount++;
+        totalUpdatedCount++;
+      }
+      
+      // Commit the batch when it's full (Firestore limit is 500) or on the last item.
+      if (operationCount > 0 && (operationCount % 499 === 0 || index === declarationsSnapshot.size - 1)) {
+        console.log(`[MIGRATION] Committing batch with ${operationCount} operations.`);
+        promises.push(batch.commit());
+        // Reset batch and counter for the next set of operations.
+        batch = db.batch();
+        operationCount = 0;
+      }
+    });
+
+    await Promise.all(promises);
+
+    if (totalUpdatedCount > 0) {
+      const message = `Migration successful. Updated ${totalUpdatedCount} declarations.`;
+      console.log(`[MIGRATION] ${message}`);
+      res.status(200).send(message);
+    } else {
+      const message = 'Migration complete, but no declarations needed an update.';
+      console.log(`[MIGRATION] ${message}`);
+      res.status(200).send(message);
+    }
+
+  } catch (error) {
+    console.error('[MIGRATION] Data migration failed:', error);
+    res.status(500).send('Data migration failed. Check server logs for details.');
+  }
+});
+
 // Durum güncelle
 app.put('/api/declarations/:id', async (req, res) => {
   try {
@@ -328,7 +396,7 @@ app.delete('/api/customers/:id', async (req, res) => {
 
 
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
