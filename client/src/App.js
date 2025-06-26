@@ -41,9 +41,10 @@ function App() {
   const [hasMore, setHasMore] = useState(true);
 
   // Declaration & Modal State
-    const [lastVisibleDeclaration, setLastVisibleDeclaration] = useState(null);
-  const lastVisibleDeclarationRef = useRef(null);
   const [hasMoreDeclarations, setHasMoreDeclarations] = useState(true);
+  const lastVisibleDeclarationRef = useRef(null);
+  const hasMoreDeclarationsRef = useRef(true);
+  const fetchingDeclarationsRef = useRef(false);
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editCustomer, setEditCustomer] = useState(null);
   const [filters, setFilters] = useState({
@@ -53,6 +54,7 @@ function App() {
     ledger: '',
     status: '',
   });
+  const filtersRef = useRef(filters);
   
   // Onay Modalı için State
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
@@ -78,6 +80,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem('declarationTypes', JSON.stringify(declarationTypes));
   }, [declarationTypes]);
+
+  useEffect(() => {
+    filtersRef.current = filters;
+  }, [filters]);
 
   // Data Fetching
     const fetchCustomers = useCallback(async (loadMore = false) => {
@@ -127,18 +133,20 @@ function App() {
     }
   }, [hasMore]);
 
-  const fetchDeclarations = useCallback(async (loadMore = false, currentFilters) => {
-    if (loadMore && (isFetchingMore || !hasMoreDeclarations)) {
-      return;
-    }
+  const fetchDeclarations = useCallback(async (loadMore = false) => {
+    if (fetchingDeclarationsRef.current) return;
+    if (loadMore && !hasMoreDeclarationsRef.current) return;
 
+    fetchingDeclarationsRef.current = true;
     if (loadMore) {
       setIsFetchingMore(true);
     } else {
       setIsLoading(true);
       lastVisibleDeclarationRef.current = null;
+      hasMoreDeclarationsRef.current = true; 
     }
 
+    const currentFilters = filtersRef.current;
     const currentLastVisible = lastVisibleDeclarationRef.current;
 
     try {
@@ -169,28 +177,30 @@ function App() {
       }
 
       lastVisibleDeclarationRef.current = newLastVisible;
-      setLastVisibleDeclaration(newLastVisible);
 
-      setHasMoreDeclarations(newDeclarations.length > 0 && newDeclarations.length >= 20);
+      const hasMore = newDeclarations.length >= 20;
+      hasMoreDeclarationsRef.current = hasMore;
+      setHasMoreDeclarations(hasMore);
 
     } catch (error) {
       console.error('Fetch declarations failed:', error);
       toast.error('Beyannameler yüklenirken bir hata oluştu.');
     } finally {
+      fetchingDeclarationsRef.current = false;
       if (loadMore) {
         setIsFetchingMore(false);
       } else {
         setIsLoading(false);
       }
     }
-  }, [isFetchingMore, hasMoreDeclarations]);
+  }, []);
 
   useEffect(() => {
     fetchCustomers();
   }, [fetchCustomers]);
 
   useEffect(() => {
-    fetchDeclarations(false, filters);
+    fetchDeclarations(false);
   }, [filters, fetchDeclarations]);
 
   // Handlers
@@ -270,7 +280,7 @@ function App() {
       setName(''); setTaxNo(''); setLedgerType('İşletme');
       setSelectedDeclarations([]); setDeclarationMonths({});
       fetchCustomers(); // Refresh customer list
-      fetchDeclarations();
+      fetchDeclarations(false);
     } catch (err) {
       toast.error('Kayıt sırasında hata oluştu.');
       console.error(err);
@@ -294,7 +304,7 @@ function App() {
       await axios.delete(`https://beyanname-takip-sistemi.onrender.com/api/customers/${customerToDelete}`);
       toast.success('Müşteri başarıyla silindi!');
       fetchCustomers(); // Listeyi yenile
-      fetchDeclarations();
+      fetchDeclarations(false);
     } catch (error) {
       console.error('Error deleting customer:', error);
       if (error.response && error.response.data && error.response.data.details) {
@@ -391,7 +401,7 @@ function App() {
   };
 
   const loadMoreDeclarations = () => {
-    fetchDeclarations(true, filters);
+    fetchDeclarations(true);
   };
 
   const handleLoadMore = () => {
