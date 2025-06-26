@@ -141,9 +141,11 @@ function App() {
     if (loadMore) {
       setIsFetchingMore(true);
     } else {
+      // Yeni bir filtre uygulandığında, eski verileri hemen temizle ve yükleme durumunu başlat.
       setIsLoading(true);
+      setDeclarations([]); 
       lastVisibleDeclarationRef.current = null;
-      hasMoreDeclarationsRef.current = true; 
+      hasMoreDeclarationsRef.current = true;
     }
 
     const currentFilters = filtersRef.current;
@@ -171,7 +173,12 @@ function App() {
       const newLastVisible = responseData.lastVisible;
 
       if (loadMore) {
-        setDeclarations(prev => [...prev, ...newDeclarations]);
+        // Sunucudan gelen verilerde mevcut listede olanları filtreleyerek tekrarı önle.
+        setDeclarations(prev => {
+          const existingIds = new Set(prev.map(d => d.id));
+          const uniqueNewDeclarations = newDeclarations.filter(d => !existingIds.has(d.id));
+          return [...prev, ...uniqueNewDeclarations];
+        });
       } else {
         setDeclarations(newDeclarations);
       }
