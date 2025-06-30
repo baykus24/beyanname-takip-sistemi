@@ -171,16 +171,19 @@ app.get('/api/declarations', async (req, res) => {
     
     let query = db.collection('declarations');
 
-    // HATA AYIKLAMA: Filtreleme geçici olarak devre dışı bırakıldı
-    // if (ledger) {
-    //   query = query.where('ledger_type', '==', ledger);
-    // }
-    // if (month) query = query.where('month', '==', parseInt(month, 10));
-    // if (year) query = query.where('year', '==', parseInt(year, 10));
-    // if (type) query = query.where('type', '==', type);
-    // if (status) query = query.where('status', '==', status);
+    if (ledger) {
+      // New logic: Directly query by the denormalized 'ledger_type' field.
+      // This avoids the 30-item limit of 'in' queries and is more performant.
+      // This requires a one-time data migration to add 'ledger_type' to all declarations.
+      query = query.where('ledger_type', '==', ledger);
+    }
 
-    // query = query.orderBy('created_at', 'desc').orderBy('__name__', 'desc'); // Hata ayıklama için geçici olarak devre dışı bırakıldı
+    if (month) query = query.where('month', '==', parseInt(month, 10));
+    if (year) query = query.where('year', '==', parseInt(year, 10));
+    if (type) query = query.where('type', '==', type);
+    if (status) query = query.where('status', '==', status);
+
+    query = query.orderBy('created_at', 'desc').orderBy('__name__', 'desc');
 
     if (lastVisible) {
       console.log(`[SERVER-LOG] Received lastVisible cursor ID: ${lastVisible}`);
