@@ -426,9 +426,6 @@ function App() {
     }
   }, []);
 
-    const completedCount = declarations.filter(d => d.status === 'Tamamlandı').length;
-  const pendingCount = declarations.filter(d => d.status === 'Bekliyor').length;
-
   const handleDeclarationNoteUpdate = useCallback(async (declarationId, newNote) => {
     let originalDeclaration;
 
