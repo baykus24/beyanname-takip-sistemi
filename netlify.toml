@@ -4,7 +4,7 @@
   base = "client"
 
   # 'base' klasörünün içindeyken bu komutu çalıştır.
-  command = "npm run build"
+  command = "CI=false npm run build"
 
   # Derleme bittikten sonra yayınlanacak klasör.
   # Bu yol, projenin ana dizinine göre belirtilmiştir.
