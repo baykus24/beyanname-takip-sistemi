@@ -104,6 +104,17 @@ app.get('/api/customers', async (req, res) => {
   }
 });
 
+// Müşteri sayısını getir
+app.get('/api/customers/count', async (req, res) => {
+  try {
+    const snapshot = await db.collection('customers').get();
+    res.json({ count: snapshot.size });
+  } catch (error) {
+    console.error('Error fetching customer count:', error);
+    res.status(500).json({ error: 'Failed to fetch customer count' });
+  }
+});
+
 // Beyanname ekle
 app.post('/api/declarations', async (req, res) => {
   try {

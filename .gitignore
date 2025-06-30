@@ -7,3 +7,6 @@ db.sqlite
 
 # Firebase service account key
 server/firebase-service-account-key.json
+
+# Local Netlify folder
+.netlify

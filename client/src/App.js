@@ -8,6 +8,8 @@ import DeclarationList from './DeclarationList';
 import EditDeclarationsModal from './EditDeclarationsModal';
 import { exportToExcel, exportToPdf } from './exportUtils';
 import ConfirmationModal from './ConfirmationModal';
+import StatsCounter from './StatsCounter';
+import './StatsCounter.css';
 
 // Constants
 const LEDGER_TYPES = [
@@ -24,6 +26,29 @@ const MONTHS = [
 ];
 
 function App() {
+  const [totalCustomerCount, setTotalCustomerCount] = useState(0);
+
+  useEffect(() => {
+    const fetchTotalCustomerCount = async () => {
+      try {
+        // Bu endpoint'in toplam müşteri sayısını { count: number } formatında döndürdüğünü varsayıyoruz.
+        const response = await axios.get('https://beyanname-takip-sistemi.onrender.com/api/customers/count');
+        if (response.data && typeof response.data.count !== 'undefined') {
+          setTotalCustomerCount(response.data.count);
+        }
+      } catch (error) {
+        console.error("Toplam müşteri sayısı alınamadı:", error);
+        // Hata durumunda sayaç 0 olarak kalır, kullanıcıya hata göstermeye gerek yok.
+      }
+    };
+
+    fetchTotalCustomerCount();
+    // Veriyi güncel tutmak için periyodik olarak tekrar çek
+    const intervalId = setInterval(fetchTotalCustomerCount, 60000); // 1 dakikada bir
+
+    return () => clearInterval(intervalId); // Component unmount olduğunda interval'i temizle
+  }, []);
+
   // Form State
   const [name, setName] = useState('');
   const [taxNo, setTaxNo] = useState('');
@@ -87,7 +112,7 @@ function App() {
   }, [filters]);
 
   // Data Fetching
-    const fetchCustomers = useCallback(async (loadMore = false) => {
+    const fetchCustomers = useCallback(async (loadMore = false, forceUpdateCount = false) => {
     if (loadMore && !hasMore) return;
     
     if (loadMore) {
@@ -121,6 +146,18 @@ function App() {
 
       if (!newCustomers.length || newCustomers.length < 15) {
         setHasMore(false);
+      }
+
+      // Müşteri sayısı sayacını güncelle (eğer yeni bir yükleme yapılıyorsa veya zorlandıysa)
+      if (!loadMore || forceUpdateCount) {
+        try {
+          const countResponse = await axios.get('https://beyanname-takip-sistemi.onrender.com/api/customers/count');
+          if (countResponse.data && typeof countResponse.data.count !== 'undefined') {
+            setTotalCustomerCount(countResponse.data.count);
+          }
+        } catch (error) {
+          console.error("Toplam müşteri sayısı alınamadı:", error);
+        }
       }
     } catch (error) {
       console.error('Error fetching customers:', error);
@@ -312,10 +349,9 @@ function App() {
       }
       toast.success('Kayıt başarılı!');
       setName(''); setTaxNo(''); setLedgerType('İşletme');
-      // Corrected state reset
       setSelectedDeclarations({}); 
       setDeclarationMonths({});
-      fetchCustomers(); // Refresh customer list
+      fetchCustomers(false, true); // Müşteri listesini ve sayacı yenile
       fetchDeclarations(false);
     } catch (err) {
       toast.error('Kayıt sırasında hata oluştu.');
@@ -339,7 +375,7 @@ function App() {
     try {
       await axios.delete(`https://beyanname-takip-sistemi.onrender.com/api/customers/${customerToDelete}`);
       toast.success('Müşteri başarıyla silindi!');
-      fetchCustomers(); // Listeyi yenile
+      fetchCustomers(false, true); // Müşteri listesini ve sayacı yenile
       fetchDeclarations(false);
     } catch (error) {
       console.error('Error deleting customer:', error);
@@ -389,6 +425,9 @@ function App() {
       });
     }
   }, []);
+
+    const completedCount = declarations.filter(d => d.status === 'Tamamlandı').length;
+  const pendingCount = declarations.filter(d => d.status === 'Bekliyor').length;
 
   const handleDeclarationNoteUpdate = useCallback(async (declarationId, newNote) => {
     let originalDeclaration;
@@ -462,6 +501,9 @@ function App() {
     ];
     exportToPdf('Müşteri Listesi', columns, filteredCustomers, 'musteri_listesi');
   };
+
+  const completedCount = declarations.filter(d => d.status === 'Tamamlandı').length;
+  const pendingCount = declarations.filter(d => d.status === 'Bekliyor').length;
 
   return (
     <>
@@ -546,6 +588,12 @@ function App() {
       </div>
 
       <div className="list-container">
+        <StatsCounter
+          completed={completedCount}
+          pending={pendingCount}
+          totalDeclarations={declarations.length}
+          totalCustomers={totalCustomerCount}
+        />
         <div className="list-header">
           <h3>Kayıtlı Müşteriler</h3>
           <div className="export-buttons">
