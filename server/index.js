@@ -36,7 +36,8 @@ const app = express();
 // Gelen isteklerin hangi kaynaklardan kabul edileceğini belirtin.
 const allowedOrigins = [
   'http://localhost:3000', // Geliştirme ortamı için
-  'https://lively-malasada-eba26f.netlify.app' // Netlify'daki siteniz için
+  'https://lively-malasada-eba26f.netlify.app', // Netlify'daki ana siteniz
+  'https://68625625e6b73300080011f9--lively-malasada-eba26f.netlify.app' // Son dağıtım önizlemesi
 ];
 
 const corsOptions = {
