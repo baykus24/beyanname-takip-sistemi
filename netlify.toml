@@ -1,0 +1,18 @@
+# Bu dosya Netlify'a projenin nasıl derleneceğini söyler.
+[build]
+  # Derleme komutlarını çalıştırmadan önce bu klasöre geç.
+  base = "client"
+
+  # 'base' klasörünün içindeyken bu komutu çalıştır.
+  command = "npm run build"
+
+  # Derleme bittikten sonra yayınlanacak klasör.
+  # Bu yol, projenin ana dizinine göre belirtilmiştir.
+  publish = "client/build"
+
+# Tek Sayfa Uygulamaları (SPA) için yönlendirme kuralı.
+# Bu, sayfa yenilendiğinde 404 hatası alınmasını engeller.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
