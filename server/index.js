@@ -183,7 +183,7 @@ app.get('/api/declarations', async (req, res) => {
     if (type) query = query.where('type', '==', type);
     if (status) query = query.where('status', '==', status);
 
-    query = query.orderBy('created_at', 'desc').orderBy('__name__', 'desc');
+    // query = query.orderBy('created_at', 'desc').orderBy('__name__', 'desc'); // Hata ayıklama için geçici olarak devre dışı bırakıldı
 
     if (lastVisible) {
       console.log(`[SERVER-LOG] Received lastVisible cursor ID: ${lastVisible}`);
