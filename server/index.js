@@ -312,11 +312,11 @@ app.put('/api/declarations/:id', async (req, res) => {
 
     // Eksik alanları mevcut veriyle tamamla
     const updateData = {};
-    if (typeof status !== 'undefined') updateData.status = status;
-    else if (typeof currentData.status !== 'undefined') updateData.status = currentData.status;
-    if (typeof note !== 'undefined') updateData.note = note;
-    else if (typeof currentData.note !== 'undefined') updateData.note = currentData.note;
-    // undefined değerleri updateData'ya hiç ekleme
+    if (typeof status !== 'undefined' && status !== null) updateData.status = status;
+    else if (typeof currentData.status !== 'undefined' && currentData.status !== null) updateData.status = currentData.status;
+    if (typeof note !== 'undefined' && note !== null) updateData.note = note;
+    else if (typeof currentData.note !== 'undefined' && currentData.note !== null) updateData.note = currentData.note;
+    // undefined veya null değerleri updateData'ya hiç ekleme
 
     if (completed_at) {
       updateData.completed_at = admin.firestore.Timestamp.fromDate(new Date(completed_at));
