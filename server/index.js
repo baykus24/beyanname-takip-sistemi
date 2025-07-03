@@ -116,6 +116,24 @@ app.get('/api/customers/count', async (req, res) => {
   }
 });
 
+// Tüm benzersiz beyanname türlerini getir
+app.get('/api/declarations/types', async (req, res) => {
+  try {
+    const snapshot = await db.collection('declarations').get();
+    const types = new Set();
+    snapshot.forEach(doc => {
+      const type = doc.data().type;
+      if (type) {
+        types.add(type);
+      }
+    });
+    res.json(Array.from(types).sort());
+  } catch (error) {
+    console.error('Error fetching declaration types:', error);
+    res.status(500).json({ error: 'Failed to fetch declaration types' });
+  }
+});
+
 // Beyanname ekle
 app.post('/api/declarations', async (req, res) => {
   try {
@@ -286,26 +304,31 @@ app.put('/api/declarations/:id', async (req, res) => {
   try {
     const { status, completed_at, note } = req.body;
     const declarationRef = db.collection('declarations').doc(req.params.id);
-    
-    const updateData = {
-      status,
-      note
-    };
+    const docSnapshot = await declarationRef.get();
+    if (!docSnapshot.exists) {
+      return res.status(404).json({ error: 'Declaration not found', id: req.params.id });
+    }
+    const currentData = docSnapshot.data();
+
+    // Eksik alanları mevcut veriyle tamamla
+    const updateData = {};
+    if (typeof status !== 'undefined') updateData.status = status;
+    else if (typeof currentData.status !== 'undefined') updateData.status = currentData.status;
+    if (typeof note !== 'undefined') updateData.note = note;
+    else if (typeof currentData.note !== 'undefined') updateData.note = currentData.note;
+    // undefined değerleri updateData'ya hiç ekleme
 
     if (completed_at) {
-      // completed_at string ise Firestore Timestamp'e çevir
-      // Eğer istemciden zaten Timestamp geliyorsa bu adıma gerek yok
       updateData.completed_at = admin.firestore.Timestamp.fromDate(new Date(completed_at));
-    } else if (status === 'Tamamlandı' && !completed_at) {
-        updateData.completed_at = admin.firestore.FieldValue.serverTimestamp(); // Veya null bırakılabilir
+    } else if (updateData.status === 'Tamamlandı' && !completed_at) {
+      updateData.completed_at = admin.firestore.FieldValue.serverTimestamp();
     }
-
 
     await declarationRef.update(updateData);
     res.json({ updated: req.params.id });
   } catch (error) {
-    console.error('Error updating declaration:', error);
-    res.status(500).json({ error: 'Failed to update declaration' });
+    console.error('Error updating declaration:', error, req.body, req.params.id);
+    res.status(500).json({ error: 'Failed to update declaration', details: error.message, id: req.params.id, body: req.body });
   }
 });
 
