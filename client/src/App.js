@@ -88,31 +88,11 @@ function App() {
   
   // Dynamic Declaration Types State
   const [customDeclInput, setCustomDeclInput] = useState('');
-  const [declarationTypes, setDeclarationTypes] = useState(() => {
-    try {
-      const saved = localStorage.getItem('declarationTypes');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed;
-        }
-      }
-    } catch (error) {
-      console.error("Failed to parse declarationTypes from localStorage", error);
-    }
-    return DEFAULT_DECLARATION_TYPES;
-  });
-
-  useEffect(() => {
-    localStorage.setItem('declarationTypes', JSON.stringify(declarationTypes));
-  }, [declarationTypes]);
-
-  useEffect(() => {
-    filtersRef.current = filters;
-  }, [filters]);
+  const [declarationTypes, setDeclarationTypes] = useState(DEFAULT_DECLARATION_TYPES);
+  const [allDeclarationTypes, setAllDeclarationTypes] = useState([]); // From server
 
   // Data Fetching
-    const fetchCustomers = useCallback(async (loadMore = false, forceUpdateCount = false) => {
+  const fetchCustomers = useCallback(async (loadMore = false, forceUpdateCount = false) => {
     if (loadMore && !hasMore) return;
     
     if (loadMore) {
@@ -124,29 +104,39 @@ function App() {
 
     try {
       let url = 'https://beyanname-takip-sistemi.onrender.com/api/customers';
-      if (loadMore && lastVisibleRef.current) {
-        url += `?lastVisible=${lastVisibleRef.current}`;
-      }
-
-      const response = await axios.get(url, {
-        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', 'Expires': '0' },
-      });
+const params = new URLSearchParams();
+params.append('limit', '15');
+if (loadMore && lastVisibleRef.current) {
+  params.append('lastVisible', lastVisibleRef.current);
+}
+console.log('[FETCH] lastVisible gönderilen:', lastVisibleRef.current);
+const response = await axios.get(url + '?' + params.toString(), {
+  headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache', 'Expires': '0' },
+});
       
       const newCustomers = Array.isArray(response.data.customers) ? response.data.customers : [];
-      const newLastVisible = response.data.lastVisible;
+const newLastVisible = response.data.lastVisible;
 
-      lastVisibleRef.current = newLastVisible;
-      setLastVisible(newLastVisible);
+console.log('[FETCH] Gelen müşteri IDleri:', newCustomers.map(c => c.id || c._id));
+console.log('[FETCH] newLastVisible:', newLastVisible);
 
-      if (loadMore) {
-        setCustomers(prev => [...(Array.isArray(prev) ? prev : []), ...newCustomers]);
-      } else {
-        setCustomers(newCustomers);
-      }
+lastVisibleRef.current = newLastVisible;
+setLastVisible(newLastVisible);
 
-      if (!newCustomers.length || newCustomers.length < 15) {
-        setHasMore(false);
-      }
+if (loadMore) {
+  setCustomers(prev => {
+    // Deduplication: Önceki ve yeni müşteri ID'lerini birleştir, tekrarları çıkar
+    const existingIds = new Set((prev || []).map(c => c.id || c._id));
+    const uniqueNew = newCustomers.filter(c => !existingIds.has(c.id || c._id));
+    return [...(Array.isArray(prev) ? prev : []), ...uniqueNew];
+  });
+} else {
+  setCustomers(newCustomers);
+}
+
+if (!newCustomers.length || newCustomers.length < 15) {
+  setHasMore(false);
+}
 
       // Müşteri sayısı sayacını güncelle (eğer yeni bir yükleme yapılıyorsa veya zorlandıysa)
       if (!loadMore || forceUpdateCount) {
@@ -238,15 +228,54 @@ function App() {
     }
   };
 
-
   useEffect(() => {
+    // This effect runs once on mount to fetch all necessary initial data.
+    const fetchInitialData = async () => {
+      try {
+        const response = await axios.get('https://beyanname-takip-sistemi.onrender.com/api/declarations/types');
+        setAllDeclarationTypes(response.data);
+      } catch (error) {
+        console.error('Failed to fetch all declaration types:', error);
+      }
+    };
+    
+    fetchInitialData();
     fetchCustomers();
-  }, [fetchCustomers]);
+    fetchDeclarations();
+  }, []); // Empty dependency array means this runs only once on mount.
 
   useEffect(() => {
-    // This useEffect now correctly re-triggers when 'filters' changes.
-    // 'fetchDeclarations' is not needed in the dependency array because it's stable
-    // across re-renders (as it's defined in the component body).
+    // Bu kanca, varsayılan, sunucudan gelen ve yerel olarak kaydedilen beyanname türlerini birleştirir.
+    try {
+      const saved = localStorage.getItem('declarationTypes');
+      // Yerel olarak kaydedilmiş türleri al, yoksa boş bir dizi kullan.
+      const localTypes = saved ? JSON.parse(saved) : [];
+      
+      // Üç kaynağı da birleştir: Varsayılanlar, sunucudan gelenler ve yereldekiler.
+      // Set yapısı, mükerrer kayıtları otomatik olarak engeller.
+      const combined = [...new Set([...DEFAULT_DECLARATION_TYPES, ...allDeclarationTypes, ...localTypes])].sort();
+      
+      setDeclarationTypes(combined);
+    } catch (error) {
+      console.error("localStorage'dan beyanname türleri okunurken hata oluştu:", error);
+      // Hata durumunda, sadece varsayılan ve sunucu türlerini birleştir.
+      const combined = [...new Set([...DEFAULT_DECLARATION_TYPES, ...allDeclarationTypes])].sort();
+      setDeclarationTypes(combined);
+    }
+  }, [allDeclarationTypes]); // Sunucudan türler geldiğinde yeniden çalışır.
+
+  useEffect(() => {
+    // This effect saves the combined list back to localStorage whenever it changes.
+    localStorage.setItem('declarationTypes', JSON.stringify(declarationTypes));
+  }, [declarationTypes]);
+
+  useEffect(() => {
+    // This effect keeps a ref to the filters to be used in callbacks.
+    filtersRef.current = filters;
+  }, [filters]);
+
+  useEffect(() => {
+    // This effect refetches declarations when filters change.
     fetchDeclarations(false); 
   }, [filters]);
 
@@ -317,12 +346,19 @@ function App() {
     });
   };
 
-    const handleSubmit = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    // Corrected validation
+    // Gelişmiş doğrulama
     if (!name || !taxNo || Object.keys(selectedDeclarations).length === 0) {
       toast.error('Tüm alanları doldurun ve en az bir beyanname seçin.');
       return;
+    }
+    // Her beyanname için en az bir ay seçili mi?
+    for (const type of Object.keys(selectedDeclarations)) {
+      if (!declarationMonths[type] || declarationMonths[type].length === 0) {
+        toast.error(`'${type}' için en az bir ay seçmelisiniz.`);
+        return;
+      }
     }
     setIsLoading(true);
     try {
@@ -354,18 +390,30 @@ function App() {
       fetchCustomers(false, true); // Müşteri listesini ve sayacı yenile
       fetchDeclarations(false);
     } catch (err) {
-      toast.error('Kayıt sırasında hata oluştu.');
+      // Sunucudan detaylı hata mesajı varsa göster
+      if (err.response && err.response.data && err.response.data.error) {
+        toast.error(`Kayıt sırasında hata oluştu: ${err.response.data.error}`);
+      } else {
+        toast.error('Kayıt sırasında hata oluştu.');
+      }
       console.error(err);
     } finally {
       setIsLoading(false);
     }
   };
 
-    // Silme işlemini başlatan fonksiyon (modalı açar)
+  // Silme işlemini başlatan fonksiyon (modalı açar)
   const handleDeleteCustomer = (customerId) => {
     setCustomerToDelete(customerId);
     setIsConfirmModalOpen(true);
   };
+
+  // Modal kapatıldığında state sıfırlama
+  useEffect(() => {
+    if (!isConfirmModalOpen) {
+      setCustomerToDelete(null);
+    }
+  }, [isConfirmModalOpen]);
 
   // Modal'dan gelen onayla asıl silme işlemini yapan fonksiyon
   const handleConfirmDelete = async () => {
@@ -394,11 +442,12 @@ function App() {
 
   const handleDeclarationStatusUpdate = useCallback(async (declarationId, newStatus) => {
     let originalDeclaration;
-
+    let optimisticError = false;
     setDeclarations(prevDeclarations => {
       const declarationIndex = prevDeclarations.findIndex(d => d.id === declarationId);
       if (declarationIndex === -1) {
         toast.error("Güncellenecek beyanname bulunamadı.");
+        optimisticError = true;
         return prevDeclarations;
       }
       originalDeclaration = prevDeclarations[declarationIndex];
@@ -407,7 +456,7 @@ function App() {
       updatedDeclarations[declarationIndex] = { ...originalDeclaration, status: newStatus, completed_at: completedAt };
       return updatedDeclarations;
     });
-
+    if (optimisticError) return;
     try {
       await axios.put(`https://beyanname-takip-sistemi.onrender.com/api/declarations/${declarationId}`, {
         status: newStatus,
@@ -415,7 +464,7 @@ function App() {
         note: originalDeclaration?.note || ''
       });
     } catch (error) {
-      toast.error('Durum güncellenemedi. Değişiklikler geri alınıyor.');
+      toast.error('Durum güncellenemedi. Değişiklikler geri alındı. Lütfen sayfayı yenileyin veya tekrar deneyin.');
       setDeclarations(prevDeclarations => {
         const declarationIndex = prevDeclarations.findIndex(d => d.id === declarationId);
         if (declarationIndex === -1) return prevDeclarations;
@@ -428,16 +477,19 @@ function App() {
 
   const handleDeclarationNoteUpdate = useCallback(async (declarationId, newNote) => {
     let originalDeclaration;
-
+    let optimisticError = false;
     setDeclarations(prevDeclarations => {
-        const declarationIndex = prevDeclarations.findIndex(d => d.id === declarationId);
-        if (declarationIndex === -1) return prevDeclarations;
-        originalDeclaration = prevDeclarations[declarationIndex];
-        const updatedDeclarations = [...prevDeclarations];
-        updatedDeclarations[declarationIndex] = { ...originalDeclaration, note: newNote };
-        return updatedDeclarations;
+      const declarationIndex = prevDeclarations.findIndex(d => d.id === declarationId);
+      if (declarationIndex === -1) {
+        optimisticError = true;
+        return prevDeclarations;
+      }
+      originalDeclaration = prevDeclarations[declarationIndex];
+      const updatedDeclarations = [...prevDeclarations];
+      updatedDeclarations[declarationIndex] = { ...originalDeclaration, note: newNote };
+      return updatedDeclarations;
     });
-
+    if (optimisticError) return;
     try {
       await axios.put(`https://beyanname-takip-sistemi.onrender.com/api/declarations/${declarationId}`, {
         status: originalDeclaration?.status,
@@ -445,7 +497,7 @@ function App() {
         note: newNote,
       });
     } catch (error) {
-      toast.error('Not güncellenemedi. Değişiklikler geri alınıyor.');
+      toast.error('Not güncellenemedi. Değişiklikler geri alındı. Lütfen sayfayı yenileyin veya tekrar deneyin.');
       setDeclarations(prevDeclarations => {
         const declarationIndex = prevDeclarations.findIndex(d => d.id === declarationId);
         if (declarationIndex === -1) return prevDeclarations;
@@ -466,13 +518,17 @@ function App() {
     setEditModalOpen(false);
   };
 
-  
-
   const handleFilterChange = (e) => {
+    // Filtre değiştiğinde sayfalama ve ilgili state'leri sıfırla
     setFilters({ ...filters, [e.target.name]: e.target.value });
+    setDeclarations([]);
+    setHasMoreDeclarations(true);
+    lastVisibleDeclarationRef.current = null;
+    hasMoreDeclarationsRef.current = true;
   };
 
   const loadMoreDeclarations = () => {
+    // Yeni veri yüklerken eski veriyle karışmayı önle
     fetchDeclarations(true);
   };
 
@@ -549,21 +605,21 @@ function App() {
                   <button type="button" onClick={() => handleDeclRemove(type)} style={{ marginLeft: 2, background: '#dc3545', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 6px', cursor: 'pointer', fontSize: 12 }}>Sil</button>
                 </span>
               ))}
-              <span style={{ display: 'inline-flex', alignItems: 'center', marginBottom: 6 }}>
-                <input
-                  type="text"
-                  value={customDeclInput}
-                  onChange={e => setCustomDeclInput(e.target.value)}
-                  placeholder="Yeni beyanname türü"
-                  style={{ padding: '2px 6px', borderRadius: 4, border: '1px solid #ccc', marginRight: 4, fontSize: 13 }}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCustomDeclAdd(); } }}
-                />
-                <button type="button" onClick={handleCustomDeclAdd} style={{ background: '#007bff', color: '#fff', border: 'none', borderRadius: 4, padding: '2px 10px', cursor: 'pointer', fontSize: 12 }}>Ekle</button>
-              </span>
+            </div>
+            {/* Yeni beyanname türü ekleme bölümü */}
+            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center' }}>
+              <input 
+                type="text" 
+                value={customDeclInput} 
+                onChange={(e) => setCustomDeclInput(e.target.value)} 
+                placeholder="Yeni beyanname türü ekle..."
+                style={{ padding: '4px 8px', borderRadius: 4, border: '1px solid #ccc', marginRight: 4, fontSize: 14 }}
+                onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleCustomDeclAdd(); } }}
+              />
+              <button type="button" onClick={handleCustomDeclAdd} style={{ background: '#28a745', color: '#fff', border: 'none', borderRadius: 4, padding: '4px 12px', cursor: 'pointer', fontSize: 14 }}>Ekle</button>
             </div>
           </div>
 
-          {/* Month Selection for selected declarations */}
           {Object.keys(selectedDeclarations).map(type => (
             <div key={type} className="months-select">
               <label>{type} için Aylar:</label>
