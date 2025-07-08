@@ -73,20 +73,19 @@ function DeclarationList({ declarations, refetchDeclarations, isLoading, declara
   }, []);
 
   const handleNoteSave = useCallback(async (id) => {
-    // Notu optimistic update için App.js'e gönder
-    if (onNoteUpdate) {
-      // noteEdit state'inin en güncel halini fonksiyonel olarak al
-      let noteToSave;
-      setNoteEdit(currentNoteEdit => {
-        noteToSave = currentNoteEdit[id] || '';
-        // Notu kaydettikten sonra düzenleme modundan çık
-        const newNotes = { ...currentNoteEdit };
-        delete newNotes[id];
-        return newNotes;
-      });
-      await onNoteUpdate(id, noteToSave);
-    }
-  }, [onNoteUpdate]); // noteEdit bağımlılığını kaldırdık
+    if (!onNoteUpdate) return;
+
+    const noteToSave = noteEdit[id] || '';
+
+    await onNoteUpdate(id, noteToSave);
+
+    // Clear the edit state for this id
+    setNoteEdit(prev => {
+      const newNotes = { ...prev };
+      delete newNotes[id];
+      return newNotes;
+    });
+  }, [onNoteUpdate, noteEdit]);
 
   const openDeleteModal = useCallback((id) => {
     setDeleteId(id);
