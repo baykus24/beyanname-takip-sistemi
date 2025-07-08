@@ -676,7 +676,7 @@ if (!newCustomers.length || newCustomers.length < 15) {
           </button>
         )}
 
-        <EditDeclarationsModal
+        <EditDeclarationsModal allDeclarationTypes={declarationTypes}
           open={editModalOpen}
           customer={editCustomer}
           declarations={declarations}

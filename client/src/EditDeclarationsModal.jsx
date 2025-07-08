@@ -1,21 +1,12 @@
 import React, { useEffect, useState } from 'react';
 
-const DECLARATION_TYPES = [
-  'KDV',
-  'Muhtasar',
-  'Geçici Vergi',
-  'Yıllık Gelir',
-  'Kurumlar',
-  'Ba-Bs',
-  'Damga',
-  'Diğer',
-];
+
 const MONTHS = [
   'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
   'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
 ];
 
-function EditDeclarationsModal({ open, customer, declarations, onSave, onClose }) {
+function EditDeclarationsModal({ open, customer, declarations, onSave, onClose, allDeclarationTypes }) {
   const [selectedDeclarations, setSelectedDeclarations] = useState([]);
   const [declarationMonths, setDeclarationMonths] = useState({});
   const [customDeclInput, setCustomDeclInput] = useState('');
@@ -69,7 +60,7 @@ function EditDeclarationsModal({ open, customer, declarations, onSave, onClose }
 
   if (!open || !customer) return null;
   // Sabit ve manuel eklenen tüm beyanname tiplerini göster
-  const allTypes = Array.from(new Set([...DECLARATION_TYPES, ...selectedDeclarations]));
+  const allTypes = Array.from(new Set([...allDeclarationTypes, ...selectedDeclarations]));
   return (
     <div style={{
       position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
