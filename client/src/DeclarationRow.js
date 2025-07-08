@@ -42,14 +42,25 @@ const DeclarationRow = ({ declaration, noteEditValue, onStatusChange, onNoteChan
       <td>{formatFirestoreTimestamp(declaration.completed_at)}</td>
       <td>
         {noteEditValue !== undefined ? (
-          <>
-            <input value={noteEditValue} onChange={e => onNoteChange(declaration.id, e.target.value)} />
-            <button onClick={() => onNoteSave(declaration.id)}>Kaydet</button>
-          </>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
+            <textarea 
+              value={noteEditValue} 
+              onChange={e => onNoteChange(declaration.id, e.target.value)} 
+              rows={3}
+              style={{ width: '100%', padding: '5px', borderRadius: '4px', border: '1px solid #ccc' }}
+            />
+            <div>
+              <button onClick={() => onNoteSave(declaration.id)} style={{ marginRight: '5px' }}>Kaydet</button>
+              <button onClick={() => onNoteEditStart(declaration.id, undefined)}>İptal</button>
+            </div>
+          </div>
         ) : (
-          <>
-            {declaration.note || ''} <button onClick={() => onNoteEditStart(declaration.id, declaration.note || '')}>Düzenle</button>
-          </>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ flex: 1, whiteSpace: 'pre-wrap', wordBreak: 'break-word', marginRight: '10px' }}>
+              {declaration.note || ''}
+            </span>
+            <button onClick={() => onNoteEditStart(declaration.id, declaration.note || '')}>Düzenle</button>
+          </div>
         )}
       </td>
       <td>
