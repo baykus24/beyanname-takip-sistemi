@@ -314,15 +314,15 @@ app.put('/api/declarations/:id', async (req, res) => {
       updateData.note = note;
     }
 
-    // Eğer durum 'Tamamlandı' olarak ayarlanıyorsa ve tamamlanma tarihi yoksa, şimdi ayarla
-    if (status === 'Tamamlandı' && !completed_at) {
-      updateData.completed_at = admin.firestore.FieldValue.serverTimestamp();
-    } else if (completed_at) {
-      // Tarih gönderildiyse, onu Firestore zaman damgasına çevir
-      updateData.completed_at = admin.firestore.Timestamp.fromDate(new Date(completed_at));
-    } else if (status === 'Bekliyor') {
-        // Durum 'Bekliyor' olarak ayarlanırsa tamamlanma tarihini kaldır
-        updateData.completed_at = null;
+    // Tarih ile ilgili işlemleri sadece durum (status) değiştiğinde yap
+    if (typeof status !== 'undefined') {
+        if (status === 'Tamamlandı') {
+            // Eğer 'completed_at' geçerli bir tarih değilse veya hiç yoksa, şimdiki zamanı ata
+            updateData.completed_at = admin.firestore.FieldValue.serverTimestamp();
+        } else if (status === 'Bekliyor') {
+            // Durum 'Bekliyor' olarak ayarlanırsa tamamlanma tarihini kaldır
+            updateData.completed_at = null;
+        }
     }
 
     // Eğer güncellenecek bir şey yoksa, boşuna işlem yapma
