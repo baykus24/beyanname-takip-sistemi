@@ -304,24 +304,30 @@ app.put('/api/declarations/:id', async (req, res) => {
   try {
     const { status, completed_at, note } = req.body;
     const declarationRef = db.collection('declarations').doc(req.params.id);
-    const docSnapshot = await declarationRef.get();
-    if (!docSnapshot.exists) {
-      return res.status(404).json({ error: 'Declaration not found', id: req.params.id });
-    }
-    const currentData = docSnapshot.data();
-
-    // Eksik alanları mevcut veriyle tamamla
     const updateData = {};
-    if (typeof status !== 'undefined' && status !== null) updateData.status = status;
-    else if (typeof currentData.status !== 'undefined' && currentData.status !== null) updateData.status = currentData.status;
-    if (typeof note !== 'undefined' && note !== null) updateData.note = note;
-    else if (typeof currentData.note !== 'undefined' && currentData.note !== null) updateData.note = currentData.note;
-    // undefined veya null değerleri updateData'ya hiç ekleme
 
-    if (completed_at) {
-      updateData.completed_at = admin.firestore.Timestamp.fromDate(new Date(completed_at));
-    } else if (updateData.status === 'Tamamlandı' && !completed_at) {
+    // Sadece gönderilen ve tanımsız olmayan alanları güncelleme nesnesine ekle
+    if (typeof status !== 'undefined') {
+      updateData.status = status;
+    }
+    if (typeof note !== 'undefined') {
+      updateData.note = note;
+    }
+
+    // Eğer durum 'Tamamlandı' olarak ayarlanıyorsa ve tamamlanma tarihi yoksa, şimdi ayarla
+    if (status === 'Tamamlandı' && !completed_at) {
       updateData.completed_at = admin.firestore.FieldValue.serverTimestamp();
+    } else if (completed_at) {
+      // Tarih gönderildiyse, onu Firestore zaman damgasına çevir
+      updateData.completed_at = admin.firestore.Timestamp.fromDate(new Date(completed_at));
+    } else if (status === 'Bekliyor') {
+        // Durum 'Bekliyor' olarak ayarlanırsa tamamlanma tarihini kaldır
+        updateData.completed_at = null;
+    }
+
+    // Eğer güncellenecek bir şey yoksa, boşuna işlem yapma
+    if (Object.keys(updateData).length === 0) {
+      return res.status(200).json({ message: 'No fields to update.' });
     }
 
     await declarationRef.update(updateData);
