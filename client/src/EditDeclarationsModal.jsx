@@ -31,6 +31,15 @@ function EditDeclarationsModal({ open, customer, declarations, onSave, onClose, 
         : [...prev, type]
     );
   };
+
+  const handleSelectAllMonths = (type) => {
+    const allSelected = declarationMonths[type]?.length === MONTHS.length;
+    setDeclarationMonths(prev => ({
+      ...prev,
+      [type]: allSelected ? [] : MONTHS,
+    }));
+  };
+
   const handleMonthChange = (type, month) => {
     setDeclarationMonths(prev => ({
       ...prev,
@@ -100,6 +109,13 @@ function EditDeclarationsModal({ open, customer, declarations, onSave, onClose, 
           <div key={type} className="months-select" style={{marginLeft: 12, marginBottom: 10}}>
             <label>{type} için Aylar:</label>
             <div className="checkbox-group">
+              <label style={{marginRight: 8, fontWeight: 'bold'}}>
+                <input
+                  type="checkbox"
+                  onChange={() => handleSelectAllMonths(type)}
+                  checked={declarationMonths[type]?.length === MONTHS.length}
+                /> Tümünü Seç
+              </label>
               {MONTHS.map(month => (
                 <label key={month} style={{marginRight: 8}}>
                   <input
